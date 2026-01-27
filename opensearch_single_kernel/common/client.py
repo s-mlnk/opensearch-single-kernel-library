@@ -141,7 +141,7 @@ class OpenSearchClient:
 
         return busy_shards
 
-    def reload_tls_certificates(self, cert_files: tuple[str] | None = None):
+    def reload_tls_certificates(self, cert_files: tuple[str] | None = None) -> None:
         """Reload TLS certificates in OpenSearch unit using REST API."""
         url_http = "_plugins/_security/api/ssl/http/reloadcerts"
         url_transport = "_plugins/_security/api/ssl/transport/reloadcerts"

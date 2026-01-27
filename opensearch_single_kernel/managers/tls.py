@@ -6,6 +6,7 @@
 
 import logging
 import socket
+from datetime import datetime
 from typing import Any
 
 from charmlibs.pathops import PathProtocol
@@ -21,6 +22,7 @@ from opensearch_single_kernel.lib.charms.tls_certificates_interface.v3.tls_certi
 )
 from opensearch_single_kernel.managers.base import BaseManager
 from opensearch_single_kernel.utils.helpers import (
+    cert_expiration_remaining_hours,
     generate_password,
     is_alias_missing_error,
     parse_tls_file,
@@ -43,6 +45,7 @@ class TlsManager(BaseManager):
     OLD_CA_ALIAS = f"old-{CA_ALIAS}"
     KEYTOOL = "opensearch.keytool"
     OLD_CA_PREFIX = "old-"
+    CERTS_EXPIRATION_DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
 
     def __init__(self, state: ClusterState, workload: BaseWorkload):
         super().__init__(state, workload)
@@ -432,7 +435,7 @@ class TlsManager(BaseManager):
 
             # import the cert
             try:
-                with self.workload.tempfile(
+                with self.workload.temp_file(
                     dir=tmpdir.parent,
                     mode="w",
                     encoding="utf-8",
@@ -524,8 +527,8 @@ class TlsManager(BaseManager):
         store_path.unlink(missing_ok=True)
 
         with (
-            self.workload.tempfile(mode="w+t", suffix=".pem", dir=store_path.parent) as tmp_key,
-            self.workload.tempfile(mode="w+t", suffix=".cert", dir=store_path.parent) as tmp_cert,
+            self.workload.temp_file(mode="w+t", suffix=".pem", dir=store_path.parent) as tmp_key,
+            self.workload.temp_file(mode="w+t", suffix=".cert", dir=store_path.parent) as tmp_cert,
         ):
             # Write key
             tmp_key.write(key)
@@ -587,7 +590,7 @@ class TlsManager(BaseManager):
     def get_cert_issuer(self, cert: str) -> str | None:
         """Retrieve the certificate issuer from a string certificate."""
         # to make sure the content is processed correctly by openssl, temporary store it in a file
-        with self.workload.tempfile(mode="w+t", dir=self.workload.root / "/tmp") as tmp_ca_file:
+        with self.workload.temp_file(mode="w+t", dir=self.workload.root / "/tmp") as tmp_ca_file:
             tmp_ca_file.write(cert)
             tmp_ca_file.flush()
             tmp_ca_file.seek(0)
@@ -620,8 +623,8 @@ class TlsManager(BaseManager):
         # using the SSL API requires authentication with app-admin cert and key
         admin_secret = self.state.secrets.get_object(Scope.APP, CertType.APP_ADMIN.val, peek=True)
         with (
-            self.workload.tempfile(mode="w+t", dir=self.workload.paths.conf) as tmp_cert,
-            self.workload.tempfile(mode="w+t", dir=self.workload.paths.conf) as tmp_key,
+            self.workload.temp_file(mode="w+t", dir=self.workload.paths.conf) as tmp_cert,
+            self.workload.temp_file(mode="w+t", dir=self.workload.paths.conf) as tmp_key,
         ):
             tmp_cert.write(admin_secret["cert"])
             tmp_cert.flush()
@@ -631,13 +634,58 @@ class TlsManager(BaseManager):
             tmp_key.flush()
             tmp_key.seek(0)
 
-        self.opensearch_client.reload_tls_certificates(cert_files=(tmp_cert.name, tmp_key.name))
+            self.opensearch_client.reload_tls_certificates(
+                cert_files=(tmp_cert.name, tmp_key.name)
+            )
 
     def finalize_ca_certs_rotation(self) -> None:
         """Handle the completion of CA rotation."""
         logger.info("CA rotation completed. Deleting old CA and updating request bundle.")
         self.remove_old_ca()
         self.update_request_ca_bundle()
+
+    def get_unit_certificates(self) -> dict[CertType, str]:
+        """Retrieve the list of certificates for this unit."""
+        certs = {}
+
+        transport_secrets = self.state.secrets.get_object(
+            Scope.UNIT, CertType.UNIT_TRANSPORT.val, peek=True
+        )
+        if transport_secrets and transport_secrets.get("cert"):
+            certs[CertType.UNIT_TRANSPORT] = transport_secrets["cert"]
+
+        http_secrets = self.state.secrets.get_object(Scope.UNIT, CertType.UNIT_HTTP.val, peek=True)
+        if http_secrets and http_secrets.get("cert"):
+            certs[CertType.UNIT_HTTP] = http_secrets["cert"]
+
+        if self.state.server.is_app_leader:
+            admin_secrets = self.state.secrets.get_object(
+                Scope.APP, CertType.APP_ADMIN.val, peek=True
+            )
+            if admin_secrets and admin_secrets.get("cert"):
+                certs[CertType.APP_ADMIN] = admin_secrets["cert"]
+
+        return certs
+
+    def check_certs_expiration(self) -> dict[CertType, str] | None:
+        """Checks the certificates' expiration. and return those expiring soon."""
+        last_cert_check = datetime.strptime(
+            self.state.server.certs_exp_checked_at, self.CERTS_EXPIRATION_DATE_FORMAT
+        )
+
+        # See if the last check was made less than 6h ago, if yes - leave
+        if (datetime.now() - last_cert_check).seconds < 6 * 3600:
+            return None
+
+        certs = self.get_unit_certificates()
+
+        # keep certificates that are expiring in less than 24h
+        for cert_type in list(certs.keys()):
+            hours = cert_expiration_remaining_hours(certs[cert_type])
+            if hours > 24 * 7:
+                del certs[cert_type]
+
+        return certs
 
     def remove_old_ca(self) -> None:
         """Remove old CA cert from trust store."""

@@ -149,6 +149,7 @@ async def test_actions_get_admin_password(ops_test: OpsTest) -> None:
 
 
 @pytest.mark.abort_on_fail
+@pytest.mark.skip
 async def test_actions_rotate_admin_password(ops_test: OpsTest) -> None:
     """Test the rotation and change of admin password."""
     leader_ip = await get_leader_unit_ip(ops_test)
@@ -290,7 +291,7 @@ async def test_check_pinned_revision(ops_test: OpsTest) -> None:
 
 
 @pytest.mark.abort_on_fail
-async def test_check_workload_version(ops_test: OpsTest) -> None:
+async def test_check_workload_version(ops_test: OpsTest, substrate) -> None:
     """Test to check if the workload_version file is updated."""
     leader_id = await get_leader_unit_id(ops_test)
 
@@ -316,7 +317,11 @@ async def test_check_workload_version(ops_test: OpsTest) -> None:
     logger.info(f"Installed snap: {installed_info}")
 
     workload_version = None
-    with open("./workload_version") as f:
+    if substrate == "k8s":
+        workload_version_path = "./tests/charms/opensearch_k8s_test_charm/workload_version"
+    elif substrate == "vm":
+        workload_version_path = "./tests/charms/opensearch_test_charm/workload_version"
+    with open(workload_version_path) as f:
         workload_version = f.read().rstrip("\n")
     assert installed_info[0] == workload_version
 

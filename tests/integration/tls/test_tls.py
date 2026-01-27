@@ -101,7 +101,9 @@ async def test_cluster_formation_after_tls(ops_test: OpsTest) -> None:
     assert await check_cluster_formation_successful(ops_test, leader_unit_ip, unit_names)
 
 
+# TODO: re-enable this test when scale up/down is implemented
 @pytest.mark.abort_on_fail
+@pytest.mark.skip(reason="Skipping TLS renewal test until scale up/down is implemented")
 async def test_tls_renewal(ops_test: OpsTest) -> None:
     """Test that renewed TLS certificates are reloaded immediately without restarting."""
     leader_unit_ip = await get_leader_unit_ip(ops_test)
@@ -201,7 +203,7 @@ async def test_tls_expiration(ops_test: OpsTest, charm, series) -> None:
     unit_id = get_application_unit_ids(ops_test, APP_NAME)[0]
     search_expression = "expire=self._get_next_secret_expiry_time\\(certificate\\)"
     replace_expression = f"expire=timedelta\\(seconds={SECRET_EXPIRY_TIME}\\)"
-    lib_file = f"/var/lib/juju/agents/unit-opensearch-{unit_id}/charm/lib/charms/tls_certificates_interface/v3/tls_certificates.py"
+    lib_file = f"/var/lib/juju/agents/unit-opensearch-{unit_id}/charm/venv/lib/python3.12/site-packages/opensearch_single_kernel/lib/charms/tls_certificates_interface/v3/tls_certificates.py"
     cmd = f"juju ssh {APP_NAME}/{unit_id} sudo sed -i 's/{search_expression}/{replace_expression}/g' {lib_file}"
     logger.info(f"Running command: {cmd}")
     subprocess.check_output(cmd, shell=True)

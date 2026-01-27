@@ -4,13 +4,16 @@
 
 """A set of helpers functions."""
 import base64
+import math
 import re
 import secrets
 import string
+from datetime import datetime
 from time import time_ns
 from typing import TYPE_CHECKING
 
 import bcrypt
+from cryptography import x509
 from ops import Unit
 
 from opensearch_single_kernel.common.constants import (
@@ -117,6 +120,14 @@ def normalized_tls_subject(subject: string) -> str:
     if subject.startswith("/"):
         subject = subject[1:]
     return subject.replace("/", ",")
+
+
+def cert_expiration_remaining_hours(cert: string) -> int:
+    """Returns the remaining hours for the cert to expire."""
+    certificate_object = x509.load_pem_x509_certificate(data=cert.encode())
+    time_difference = certificate_object.not_valid_after - datetime.utcnow()
+
+    return math.floor(time_difference.total_seconds() / 3600)
 
 
 def is_alias_missing_error(exc: OpenSearchCmdError, alias: str) -> bool:

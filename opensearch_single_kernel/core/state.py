@@ -156,6 +156,16 @@ class OpenSearchServer(RelationState):
         """Update the value of 'update-ts' in the unit databag."""
         self.update({"update-ts": str(timestamp)})
 
+    @property
+    def certs_exp_checked_at(self) -> str:
+        """Get the value of 'certs_exp_checked_at' from unit data bag."""
+        return self.relation_data.get("certs_exp_checked_at", "1970-01-01 00:00:00")
+
+    @certs_exp_checked_at.setter
+    def certs_exp_checked_at(self, value: str):
+        """Update the value of 'certs_exp_checked_at'"""
+        self.update({"certs_exp_checked_at": value})
+
 
 class OpenSearchApplication(RelationState):
     """An OpenSearch Application is a charm application with a given role.

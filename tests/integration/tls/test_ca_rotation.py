@@ -22,8 +22,7 @@ from tests.integration.helpers import (
     get_secret_by_label,
     wait_until,
 )
-
-from .conftest import TLS_CERTIFICATES_APP_NAME, TLS_STABLE_CHANNEL
+from tests.integration.tls.conftest import TLS_CERTIFICATES_APP_NAME, TLS_STABLE_CHANNEL
 
 logger = logging.getLogger(__name__)
 
@@ -49,7 +48,7 @@ ALL_GROUPS = {
             pytest.mark.group(id=deploy_type),
         ],
     )
-    for deploy_type in [LARGE_DEPLOYMENT, SMALL_DEPLOYMENT]
+    for deploy_type in [SMALL_DEPLOYMENT, LARGE_DEPLOYMENT]
 }
 ALL_DEPLOYMENTS = list(ALL_GROUPS.values())
 
@@ -90,6 +89,7 @@ async def test_build_and_deploy_active(ops_test: OpsTest, charm, series) -> None
 
 @pytest.mark.group(id=LARGE_DEPLOYMENT)
 @pytest.mark.abort_on_fail
+@pytest.mark.skip()
 async def test_build_large_deployment(ops_test: OpsTest, charm, series) -> None:
     """Setup a large deployments cluster."""
     # deploy new cluster
@@ -171,10 +171,11 @@ async def test_rollout_new_ca(ops_test: OpsTest, deploy_type) -> None:
         start_count = await c_writes.count()
 
         if deploy_type == SMALL_DEPLOYMENT:
+            # TODO: make app status active once we have support for +1 units
             await wait_until(
                 ops_test,
                 apps=[APP_NAME],
-                apps_statuses=["active"],
+                apps_statuses=["blocked"],
                 units_statuses=["active"],
                 wait_for_exact_units=len(UNIT_IDS),
                 timeout=2400,

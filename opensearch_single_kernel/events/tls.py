@@ -8,7 +8,6 @@ from typing import TYPE_CHECKING
 
 from ops import (
     ActionEvent,
-    EventSource,
     Object,
     RelationBrokenEvent,
     RelationCreatedEvent,
@@ -26,7 +25,6 @@ from opensearch_single_kernel.common.exceptions import (
     OpenSearchHttpError,
 )
 from opensearch_single_kernel.common.statuses import CharmStatuses
-from opensearch_single_kernel.events.custom_events import RestartOpenSearch
 from opensearch_single_kernel.lib.charms.tls_certificates_interface.v3.tls_certificates import (
     CertificateAvailableEvent,
     CertificateExpiringEvent,
@@ -42,8 +40,6 @@ logger = logging.getLogger(__name__)
 
 class TLSEventsHandler(Object):
     """Class implementing OpenSearch TLS events handling."""
-
-    _restart_opensearch_event = EventSource(RestartOpenSearch)
 
     def __init__(self, charm: "OpenSearchBaseCharm"):
         super().__init__(charm, key="tls_events")
@@ -151,7 +147,7 @@ class TLSEventsHandler(Object):
             return
 
         # Otherwise, we block.
-        self.status.set(CharmStatuses.TLS_RELATION_BROKEN)
+        self.charm.status.set(CharmStatuses.TLS_RELATION_BROKEN)
 
     def _on_certificate_available(self, event: CertificateAvailableEvent) -> None:  # noqa: C901
         """Enable TLS when TLS certificate available.
@@ -260,11 +256,11 @@ class TLSEventsHandler(Object):
             logger.exception(e)
             event.defer()
 
-    def on_tls_ca_rotation(self):
+    def on_tls_ca_rotation(self) -> None:
         """Called when adding new CA to the trust store."""
         self.charm.status.set(CharmStatuses.TLS_CA_ROTATION)
         logger.debug("Restarting opensearch due to CA rotation")
-        self._restart_opensearch_event.emit()
+        self.charm._restart_opensearch_event.emit()
 
     def _on_certificate_expiring(
         self, event: CertificateExpiringEvent | CertificateInvalidatedEvent
@@ -340,7 +336,7 @@ class TLSEventsHandler(Object):
                     self.charm.tls_manager.reload_tls_certificates()
                 except OpenSearchHttpError:
                     logger.error("Could not reload TLS certificates via API, will restart.")
-                    self._restart_opensearch_event.emit()
+                    self.charm._restart_opensearch_event.emit()
                 else:
                     self.charm.status.clear(CharmStatuses.TLS_NOT_FULLY_CONFIGURED)
                     self.charm.state.reset_ca_rotation_state()

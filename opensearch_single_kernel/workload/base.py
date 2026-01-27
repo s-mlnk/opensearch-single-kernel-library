@@ -150,7 +150,7 @@ class BaseWorkload(ABC):
         path.write_text(data)
 
     @contextmanager
-    def tempfile(
+    def temp_file(
         self,
         mode: str = "w+b",
         encoding=None,
@@ -220,6 +220,11 @@ class BaseWorkload(ABC):
     @abstractmethod
     def is_failed(self) -> bool:
         """Check if snap service failed."""
+        pass
+
+    @abstractmethod
+    def stop(self) -> None:
+        """Stop the opensearch service."""
         pass
 
     @abstractmethod

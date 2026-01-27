@@ -12,7 +12,7 @@ from ops import (
 )
 
 from opensearch_single_kernel.common.constants import (
-    OPENSEARCH_SYSTEM_USERS,
+    OPENSEARCH_USERS,
     CertType,
     DeploymentType,
     Scope,
@@ -54,10 +54,8 @@ class ActionsEventsHandler(Object):
         # return
 
         user_name = event.params.get("username")
-        if user_name not in OPENSEARCH_SYSTEM_USERS:
-            event.fail(
-                f"Only the {OPENSEARCH_SYSTEM_USERS} usernames are allowed for this action."
-            )
+        if user_name not in OPENSEARCH_USERS:
+            event.fail(f"Only the {OPENSEARCH_USERS} usernames are allowed for this action.")
             return
 
         password = event.params.get("password") or generate_password()
@@ -86,8 +84,8 @@ class ActionsEventsHandler(Object):
             return
 
         user_name = event.params.get("username")
-        if user_name not in OPENSEARCH_SYSTEM_USERS:
-            event.fail(f"Only the {OPENSEARCH_SYSTEM_USERS} username is allowed for this action.")
+        if user_name not in OPENSEARCH_USERS:
+            event.fail(f"Only the {OPENSEARCH_USERS} username is allowed for this action.")
             return
 
         if not self.charm.state.application.is_admin_user_initialized:

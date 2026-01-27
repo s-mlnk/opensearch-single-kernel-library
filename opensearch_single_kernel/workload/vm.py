@@ -21,12 +21,14 @@ from opensearch_single_kernel.common.exceptions import (
     OpenSearchInstallError,
     OpenSearchMissingError,
     OpenSearchStartError,
+    OpenSearchStopError,
 )
 from opensearch_single_kernel.lib.charms.operator_libs_linux.v1.systemd import (
     service_failed,
     service_running,
 )
 from opensearch_single_kernel.lib.charms.operator_libs_linux.v2 import snap
+from opensearch_single_kernel.lib.charms.operator_libs_linux.v2.snap import SnapError
 from opensearch_single_kernel.utils.helpers import mask_sensitive_information
 from opensearch_single_kernel.workload.base import BaseWorkload, Paths
 
@@ -67,7 +69,7 @@ class VMWorkload(BaseWorkload):
             raise OpenSearchInstallError()
 
     @contextmanager
-    def tempfile(
+    def temp_file(
         self,
         mode="w+b",
         encoding: str | None = None,
@@ -86,7 +88,6 @@ class VMWorkload(BaseWorkload):
         finally:
             if not f.closed:
                 f.close()
-
             if delete:
                 try:
                     os.unlink(f.name)
@@ -116,6 +117,14 @@ class VMWorkload(BaseWorkload):
             return None
 
         return output.out.strip()
+
+    def is_started(self) -> bool:
+        """Check if OpenSearch is started."""
+        reachable = self.is_reachable(self.host, self.port)
+        if not reachable:
+            logger.debug("Cannot connect to the OpenSearch server...")
+
+        return reachable
 
     @override
     def is_service_started(self, paused: bool | None = False) -> bool:
@@ -309,6 +318,18 @@ class VMWorkload(BaseWorkload):
             )
         except (TimeoutError, subprocess.TimeoutExpired):
             raise OpenSearchCmdError
+
+    @override
+    def stop(self) -> None:
+        """Stop the opensearch service."""
+        if not self.opensearch_snap.present:
+            raise OpenSearchMissingError()
+
+        try:
+            self.opensearch_snap.stop([self.SERVICE_NAME])
+        except SnapError as e:
+            logger.error(f"Failed to stop the opensearch.{self.SERVICE_NAME} service. \n{e}")
+            raise OpenSearchStopError()
 
     @property
     @override

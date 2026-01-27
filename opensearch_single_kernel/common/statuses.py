@@ -20,6 +20,11 @@ class CharmStatuses(Enum):
     # TLS Status
     TLS_RELATION_MISSING = BlockedStatus("Missing TLS relation with this cluster.")
     TLS_NOT_FULLY_CONFIGURED = MaintenanceStatus("Waiting for TLS to be fully configured...")
+    TLS_CA_ROTATION = MaintenanceStatus("Applying new CA certificate...")
+    TLS_RELATION_BROKEN = BlockedStatus(
+        "Relation broken with the TLS Operator while TLS not fully configured. Stopping OpenSearch."
+    )
+    TLS_CERTS_EXPIRATION_ERROR = BlockedStatus("The certificates:  need to be refreshed.")
 
     # Profiles
     INVALID_PROFILE_CONFIG_OPTION = BlockedStatus(
@@ -58,6 +63,10 @@ class CharmStatuses(Enum):
     )
     WAITING_TO_START = WaitingStatus("Waiting for OpenSearch to start...")
 
+    # Stop
+    SERVICE_IS_STOPPING = WaitingStatus("The OpenSearch service is stopping.")
+    SERVICE_STOPPED = WaitingStatus("The OpenSearch service stopped.")
+
     # Peer Cluster
     PEER_CLUSTER_NO_DATA_NODE = BlockedStatus(
         "Cannot run cluster with current roles. Waiting for data node..."
@@ -77,10 +86,4 @@ class CharmStatuses(Enum):
     )
     DATA_ROLE_REMOVAL_FORBIDDEN = BlockedStatus(
         "Removal of data role from current deployment not allowed - the data cannot be reallocated."
-    )
-
-    # TLS
-    TLS_CA_ROTATION = MaintenanceStatus("Applying new CA certificate...")
-    TLS_RELATION_BROKEN = BlockedStatus(
-        "Relation broken with the TLS Operator while TLS not fully configured. Stopping OpenSearch."
     )

@@ -7,10 +7,15 @@
 from abc import ABC, abstractmethod
 
 import ops
+from ops import EventSource
 
 from opensearch_single_kernel.common.constants import Substrates
 from opensearch_single_kernel.core.state import ClusterState
 from opensearch_single_kernel.events.actions import ActionsEventsHandler
+from opensearch_single_kernel.events.custom_events import (
+    RestartOpenSearch,
+    StartOpenSearch,
+)
 from opensearch_single_kernel.events.opensearch import OpenSearchEventsHandler
 from opensearch_single_kernel.events.tls import TLSEventsHandler
 from opensearch_single_kernel.managers.cluster import ClusterManager
@@ -27,6 +32,9 @@ from opensearch_single_kernel.workload.base import BaseWorkload
 
 class OpenSearchBaseCharm(ops.CharmBase, ABC):
     """Base OpenSearch Charm, this will include base structure for both machine and k8s charms."""
+
+    _restart_opensearch_event = EventSource(RestartOpenSearch)
+    _start_opensearch_event = EventSource(StartOpenSearch)
 
     def __init__(self, *args):
         super().__init__(*args)

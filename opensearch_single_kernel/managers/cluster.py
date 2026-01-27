@@ -469,3 +469,20 @@ class ClusterManager(BaseManager):
             return False
 
         return True
+
+    def is_started(self) -> bool:
+        """Return whether the opensearch service is started."""
+        reachable = self.workload.is_reachable(self.state.host_ip, self.state.port)
+        if not reachable:
+            logger.debug("Cannot connect to the OpenSearch server...")
+
+        return reachable
+
+    def stop_workload(self) -> None:
+        """Stop the opensearch service."""
+        self.workload.stop()
+        start = datetime.now()
+        while self.is_started() and (datetime.now() - start).seconds < 60:
+            time.sleep(3)
+
+        self.state.server.update({"started": None})

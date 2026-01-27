@@ -161,7 +161,7 @@ prepare: |
 
   if [[ $SPREAD_SUITE == *"lxd"* ]]
   then
-    concierge prepare --trace -c concierge-lxd.yaml
+    concierge prepare --trace -c concierge-lxd.yaml --extra-debs pipx
   fi
 
   if [[ $SPREAD_SUITE == *"k8s"* ]]
