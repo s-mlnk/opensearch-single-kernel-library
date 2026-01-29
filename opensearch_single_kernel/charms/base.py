@@ -52,7 +52,7 @@ class OpenSearchBaseCharm(ops.CharmBase, ABC):
         self.lock_manager = LockManager(self.state, self.workload)
         self.profiles_manager = ProfilesManager(self.state, self.workload)
         self.health_manager = HealthManager(self.state, self.workload)
-        self.config_manager = ConfigManager(self.state, self.workload)
+        self.config_manager = ConfigManager(self.state, self.workload, self.cluster_manager)
 
         # Event Handlers
         self.opensearch_events = OpenSearchEventsHandler(self)

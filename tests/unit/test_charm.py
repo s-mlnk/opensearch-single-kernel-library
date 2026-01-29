@@ -140,13 +140,10 @@ def test_on_start(harness, mocker):
         "opensearch_single_kernel.core.state.OpenSearchApplication.is_admin_user_initialized",
         new_callable=PropertyMock,
     )
-    set_client_auth = mocker.patch(
-        "opensearch_single_kernel.managers.config.ConfigManager.set_client_auth"
+    update_opensearch_config = mocker.patch(
+        "opensearch_single_kernel.managers.config.ConfigManager.update_opensearch_config"
     )
     get_nodes = mocker.patch("opensearch_single_kernel.managers.cluster.ClusterManager.get_nodes")
-    _set_node_conf = mocker.patch(
-        "opensearch_single_kernel.events.opensearch.OpenSearchEventsHandler._set_node_conf"
-    )
     can_service_start = mocker.patch(
         "opensearch_single_kernel.managers.cluster.ClusterManager.can_service_start"
     )
@@ -181,13 +178,13 @@ def test_on_start(harness, mocker):
     is_fully_configured.return_value = False
     is_admin_user_initialized.return_value = False
     harness.charm.on.start.emit()
-    set_client_auth.assert_not_called()
+    update_opensearch_config.assert_not_called()
 
     mocker.patch("opensearch_single_kernel.workload.vm.VMWorkload.is_service_started")
     # when _get_nodes fails
     get_nodes.side_effect = OpenSearchHttpError()
     harness.charm.on.start.emit()
-    _set_node_conf.assert_not_called()
+    update_opensearch_config.assert_not_called()
 
     get_nodes.reset_mock()
 
@@ -200,13 +197,13 @@ def test_on_start(harness, mocker):
     can_service_start.return_value = False
     check_profile_missing_requirements.return_value = True
     harness.charm.on.start.emit()
-    _set_node_conf.assert_not_called()
+    update_opensearch_config.assert_not_called()
     initialise_security_index.assert_not_called()
     get_nodes.assert_called_once()
 
     # initialisation of the security index
     get_nodes.reset_mock()
-    _set_node_conf.reset_mock()
+    update_opensearch_config.reset_mock()
     harness.charm.state.application.update({"security_index_initialised": None})
     can_service_start.return_value = True
     check_profile_missing_requirements.return_value = False
@@ -224,7 +221,7 @@ def test_on_start(harness, mocker):
     get_nodes.assert_called()
     start.assert_called_once()
     _post_start_init.assert_called_once()
-    _set_node_conf.assert_called()
+    update_opensearch_config.assert_called()
 
 
 def test_app_peers_data(harness):

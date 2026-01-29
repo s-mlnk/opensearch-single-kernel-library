@@ -55,7 +55,7 @@ from opensearch_single_kernel.common.exceptions import (
     OpenSearchUserMgmtError,
 )
 from opensearch_single_kernel.common.statuses import CharmStatuses
-from opensearch_single_kernel.core.models import DeploymentDescription, Node
+from opensearch_single_kernel.core.models import DeploymentDescription
 from opensearch_single_kernel.events.custom_events import (
     RestartOpenSearch,
     StartOpenSearch,
@@ -81,7 +81,8 @@ class OpenSearchEventsHandler(Object):
         self.framework.observe(self.charm.on.start, self._on_start)
         self.framework.observe(self.charm.on.secret_changed, self._on_secret_changed)
         self.framework.observe(
-            self.charm.on[NODE_LOCK_RELATION].relation_changed, self._on_node_lock_relation_changed
+            self.charm.on[NODE_LOCK_RELATION].relation_changed,
+            self._on_node_lock_relation_changed,
         )
         self.framework.observe(self.charm.on.leader_elected, self._on_leader_elected)
         self.framework.observe(self.charm.on.config_changed, self._on_config_changed)
@@ -159,12 +160,10 @@ class OpenSearchEventsHandler(Object):
         # for relation in self.model.relations.get(ClientRelationName, []):
         # self.opensearch_provider.update_endpoints(relation)
 
-        # register new cm addresses on every node
-        self.charm.config_manager.add_cm_addresses_to_conf()
-
         if self.charm.unit.is_leader():
             # Recompute the node roles in case self-healing didn't trigger leader related event
             self.charm.cluster_manager.recompute_roles_if_needed()
+            self.charm.config_manager.update_nodes_config()
             # TODO: Handle once large deployments are implemented
             # if self.peers_data.get(Scope.APP, "missing_relations"):
             # for failover promotions: this flag indicates that the user needs
@@ -174,7 +173,7 @@ class OpenSearchEventsHandler(Object):
             # self.peer_cluster_requirer.apply_orchestrator_status()
         elif event.relation.data.get(event.app):
             # if app_data + app_data["nodes_config"]: Reconfigure + restart node on the unit
-            if self.charm.config_manager.reconfigure_unit():
+            if self.charm.config_manager.update_opensearch_config():
                 self.charm.status.set(CharmStatuses.WAITING_TO_START)
                 logger.debug("Restarting opensearch due to reconfiguring node roles")
                 self.charm.restart_opensearch_event.emit()
@@ -412,7 +411,8 @@ class OpenSearchEventsHandler(Object):
 
     def _on_config_changed(self, event: ConfigChangedEvent) -> None:
         """On config changed event. Useful for IP changes or for user provided config changes."""
-        if self.charm.config_manager.update_host_if_needed():
+        # TODO: only on IP change
+        if self.charm.config_manager.update_opensearch_config():
             # This happens when the unit IP has changed
             self.charm.tls_events.on_unit_ip_changed(event)
 
@@ -440,11 +440,11 @@ class OpenSearchEventsHandler(Object):
 
         try:
             config_profile = self.charm.profiles_manager.config_profile
-            current_profile = self.charm.state.server.profile
             self.charm.status.clear(CharmStatuses.INVALID_PROFILE_CONFIG_OPTION)
         except ValueError:
             logger.error(
-                "Invalid profile configuration. Value: %s", self.charm.state.config.get("profile")
+                "Invalid profile configuration. Value: %s",
+                self.charm.state.config.get("profile"),
             )
             self.charm.status.set(CharmStatuses.INVALID_PROFILE_CONFIG_OPTION)
             return
@@ -453,8 +453,8 @@ class OpenSearchEventsHandler(Object):
             event.defer()
             return
 
-        profile_restart_needed = self.charm.config_manager.set_profile_configuration_if_needed(
-            current_profile, config_profile
+        profile_restart_needed = self.charm.config_manager.update_profile_configuration(
+            config_profile
         )
         if self.charm.cluster_manager.workload.is_service_started() and profile_restart_needed:
             logger.debug(
@@ -490,7 +490,7 @@ class OpenSearchEventsHandler(Object):
             nodes = self.charm.cluster_manager.get_nodes(True)
             if self.charm.cluster_manager.compute_and_broadcast_updated_topology(nodes):
                 # Nodes Config updated, we would need to reconfigure and restart
-                if self.charm.config_manager.reconfigure_unit():
+                if self.charm.config_manager.update_opensearch_config():
                     # Restart needed
                     self.charm.status.set(CharmStatuses.WAITING_TO_START)
                     logger.debug("Restarting opensearch due to reconfiguring node roles")
@@ -561,7 +561,8 @@ class OpenSearchEventsHandler(Object):
 
         if self.charm.unit.is_leader():
             self.apply_status_from_deployment_desc(
-                self.charm.state.application.deployment_desc, show_status_only_once=False
+                self.charm.state.application.deployment_desc,
+                show_status_only_once=False,
             )
         if (
             not self.charm.state.application.is_admin_user_initialized
@@ -590,14 +591,6 @@ class OpenSearchEventsHandler(Object):
             self.charm.users_manager.purge_initial_default_users()
             for user in OPENSEARCH_SYSTEM_USERS:
                 self.charm.users_manager.save_user_locally(user)
-
-        # Configure Client Authentication
-        try:
-            self.charm.config_manager.set_client_auth()
-        except OpenSearchFileOperationError as e:
-            logger.debug(f"Error while setting client auth: {e}")
-            event.defer()
-            return
 
         deployment_desc = self.charm.state.application.deployment_desc
         # only start the main orchestrator if a data node is available
@@ -725,11 +718,17 @@ class OpenSearchEventsHandler(Object):
         self.charm.status.set(CharmStatuses.WAITING_TO_START)
 
         try:
+            # Set the configuration of the node
             # Retrieve the nodes of the cluster, needed to configure this node
             nodes = self.charm.cluster_manager.get_nodes(False)
+            computed_roles = self.charm.state.computed_roles()
+            cm_names = self.charm.cluster_manager.get_cluster_managers_names(nodes)
+            cm_ips = self.charm.cluster_manager.get_cluster_managers_ips(nodes)
+            self.charm.cluster_manager.configure_bootstrap_contributors(
+                computed_roles, cm_names, cm_ips
+            )
 
-            # Set the configuration of the node
-            self._set_node_conf(nodes)
+            self.charm.config_manager.update_opensearch_config(cm_names=cm_names, cm_ips=cm_ips)
         except (OpenSearchHttpError, OpenSearchFileOperationError) as e:
             logger.debug(f"error getting the nodes: {e}")
             self.charm.lock_manager.release()
@@ -793,7 +792,7 @@ class OpenSearchEventsHandler(Object):
             self.charm.cluster_manager.update_bootstrap_state(
                 cleanup_application=self.charm.unit.is_leader()
             )
-            self.charm.config_manager.cleanup_initial_cluster_managers()
+            self.charm.config_manager.update_opensearch_config()
 
         current_node = self.charm.config_manager.current_node
         self.charm.exclusions_manager.delete_current(
@@ -933,7 +932,8 @@ class OpenSearchEventsHandler(Object):
             self.charm.profiles_manager.config_profile
         except ValueError:
             logger.error(
-                "Invalid profile configuration. Value: %s", self.charm.state.config.get("profile")
+                "Invalid profile configuration. Value: %s",
+                self.charm.state.config.get("profile"),
             )
             self.charm.status.set(CharmStatuses.INVALID_PROFILE_CONFIG_OPTION)
             return [CharmStatuses.INVALID_PROFILE_CONFIG_OPTION.value.message]
@@ -1005,30 +1005,6 @@ class OpenSearchEventsHandler(Object):
             return
 
         self.charm.app.status = BlockedStatus(deployment_desc.state.message)
-
-    def _set_node_conf(self, nodes: list[Node]) -> None:
-        """Set the configuration of the current node / unit."""
-        computed_roles = self.charm.state.computed_roles()
-
-        cm_names = self.charm.cluster_manager.get_cluster_managers_names(nodes)
-        cm_ips = self.charm.cluster_manager.get_cluster_managers_ips(nodes)
-        contribute_to_bootstrap = self.charm.cluster_manager.configure_bootstrap_contributors(
-            computed_roles,
-            cm_names,
-            cm_ips,
-        )
-
-        deployment_desc = self.charm.state.application.deployment_desc
-        self.charm.config_manager.set_node(
-            app=deployment_desc.app,
-            cluster_name=deployment_desc.config.cluster_name,
-            unit_name=self.charm.state.unit_name,
-            roles=computed_roles,
-            cm_names=list(set(cm_names)),
-            cm_ips=list(set(cm_ips)),
-            contribute_to_bootstrap=contribute_to_bootstrap,
-            node_temperature=deployment_desc.config.data_temperature,
-        )
 
     def _on_secret_changed(self, event: SecretChangedEvent) -> None:  # noqa: C901
         """Refresh secret and re-run corresponding actions if needed."""

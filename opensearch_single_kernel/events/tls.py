@@ -3,6 +3,7 @@
 # See LICENSE file for licensing details.
 
 """Handler for TLS events."""
+
 import logging
 from typing import TYPE_CHECKING
 
@@ -222,7 +223,8 @@ class TLSEventsHandler(Object):
 
         # store the certificates and keys in a key store
         self.charm.tls_manager.store_new_tls_resources(
-            cert_type, self.charm.state.secrets.get_object(scope, cert_type.val, peek=True)
+            cert_type,
+            self.charm.state.secrets.get_object(scope, cert_type.val, peek=True),
         )
 
         # apply the chain.pem file for API requests, only if the CA cert has not been updated
@@ -302,7 +304,8 @@ class TLSEventsHandler(Object):
             scope=scope, cert_type=cert_type, secrets=secrets, tls_file=False
         )
         self.certs.request_certificate_renewal(
-            old_certificate_signing_request=old_csr, new_certificate_signing_request=new_csr
+            old_certificate_signing_request=old_csr,
+            new_certificate_signing_request=new_csr,
         )
 
     def _on_certificate_invalidated(self, event: CertificateInvalidatedEvent) -> None:
@@ -317,7 +320,11 @@ class TLSEventsHandler(Object):
         self.request_new_unit_certificates()
 
     def on_tls_conf_set(
-        self, event: CertificateAvailableEvent, scope: Scope, cert_type: CertType, renewal: bool
+        self,
+        event: CertificateAvailableEvent,
+        scope: Scope,
+        cert_type: CertType,
+        renewal: bool,
     ):
         """Called after certificate ready and stored on the corresponding scope databag.
 
@@ -330,25 +337,11 @@ class TLSEventsHandler(Object):
                 self.charm.state.secrets.get_object(Scope.APP, CertType.APP_ADMIN.val, peek=True)
                 or {}
             )
-            if not (truststore_pwd := admin_secrets.get("truststore-password")):
-                event.defer()
-                return
 
-            keystore_pwd = self.charm.state.secrets.get_object(scope, cert_type.val, peek=True)[
-                "keystore-password"
-            ]
-
-            # node http or transport cert
-            self.charm.config_manager.set_node_tls_conf(
-                cert_type,
-                truststore_pwd=truststore_pwd,
-                keystore_pwd=keystore_pwd,
-            )
-
+            self.charm.config_manager.update_opensearch_config()
             # write the admin cert conf on all units, in case there is a leader loss + cert renewal
             if not admin_secrets.get("subject"):
                 return
-            self.charm.config_manager.set_admin_tls_conf(admin_secrets)
 
         self.charm.tls_manager.store_admin_tls_secrets_if_applies()
 
