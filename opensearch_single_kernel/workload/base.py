@@ -3,6 +3,7 @@
 # See LICENSE file for licensing details.
 
 """Base interface for common workload operations."""
+
 import logging
 import socket
 from abc import ABC, abstractmethod
@@ -69,6 +70,10 @@ class Paths:
     def conf(self) -> PathProtocol:
         """Return path to the conf snap directory."""
         return self.snap_data / OpenSearchPaths.CONF.val
+
+    @property
+    def opensearch_config(self) -> PathProtocol:
+        return self.conf / "opensearch.yml"
 
     @property
     def data(self) -> PathProtocol:
@@ -186,7 +191,11 @@ class BaseWorkload(ABC):
 
     @abstractmethod
     def run_cmd(
-        self, command: str, args: str = None, use_errors_replace: bool = False, stdin: str = None
+        self,
+        command: str,
+        args: str = None,
+        use_errors_replace: bool = False,
+        stdin: str = None,
     ) -> SimpleNamespace:
         """Run Command in CLI"""
         pass

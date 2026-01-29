@@ -491,9 +491,11 @@ class ProviderCertificate:
                 "chain": self.chain,
                 "revoked": self.revoked,
                 "expiry_time": self.expiry_time.isoformat(),
-                "expiry_notification_time": self.expiry_notification_time.isoformat()
-                if self.expiry_notification_time
-                else None,
+                "expiry_notification_time": (
+                    self.expiry_notification_time.isoformat()
+                    if self.expiry_notification_time
+                    else None
+                ),
             }
         )
 

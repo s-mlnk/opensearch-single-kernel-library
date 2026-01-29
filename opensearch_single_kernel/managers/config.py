@@ -8,10 +8,12 @@ import logging
 from collections import namedtuple
 from typing import Any
 
-from opensearch_single_kernel.common.constants import CertType
+import yaml
+
+from opensearch_single_kernel.common.constants import CertType, Scope
 from opensearch_single_kernel.core.models import App, Node, OpenSearchProfile
 from opensearch_single_kernel.core.state import ClusterState
-from opensearch_single_kernel.managers.base import BaseManager
+from opensearch_single_kernel.managers.cluster import ClusterManager
 from opensearch_single_kernel.utils.config import YamlConfigSetter
 from opensearch_single_kernel.utils.helpers import normalized_tls_subject
 from opensearch_single_kernel.workload.base import BaseWorkload
@@ -19,16 +21,160 @@ from opensearch_single_kernel.workload.base import BaseWorkload
 logger = logging.getLogger(__name__)
 
 
-class ConfigManager(BaseManager):
+class ConfigManager:
     """OpenSearch Config Manager."""
 
     CONFIG_YML = "opensearch.yml"
     SECURITY_CONFIG_YML = "opensearch-security/config.yml"
     JVM_OPTIONS = "jvm.options"
 
-    def __init__(self, state: ClusterState, workload: BaseWorkload):
-        super().__init__(state, workload)
-        self.name = "config_manager"
+    def __init__(
+        self,
+        state: ClusterState,
+        workload: BaseWorkload,
+        cluster_manager: ClusterManager,
+    ):
+        self.state = state
+        self.workload = workload
+        self.cluster_manager = cluster_manager
+
+    def render_opensearch_config(self) -> bool:
+        content = yaml.dump(
+            self._opensearch_static_config()
+            | self._opensearch_general_config()
+            | self._opensearch_host_config()
+            | self._openseearch_temperature_config()
+            | self._opensearch_manager_config()
+            | self._opensearch_admin_tls_config()
+            | self._opensearch_tls_config(CertType.UNIT_HTTP)
+            | self._opensearch_tls_config(CertType.UNIT_TRANSPORT)
+        )
+
+        if (
+            self.workload.paths.opensearch_config.exists()
+            and self.workload.paths.opensearch_config.read_text() == content
+        ):
+            return False
+
+        self.workload.paths.opensearch_config.write_text(content)
+        return True
+
+    @staticmethod
+    def _opensearch_static_config() -> dict[str, Any]:
+        return {
+            # This allows the new CMs to be discovered automatically (hot reload of unicast_hosts.txt)
+            "discovery.seed_providers": "file",
+            "plugins.security.disabled": False,
+            "plugins.security.ssl.http.enabled": True,
+            "plugins.security.ssl.transport.enforce_hostname_verification": True,
+            # enable hot reload of TLS certs (without restarting the node)
+            "plugins.security.ssl_cert_reload_enabled": True,
+            # to use the PUT and PATCH methods of the security rest API
+            "plugins.security.unsupported.restapi.allow_securityconfig_modification": True,
+            # security plugin rest API access
+            "plugins.security.restapi.roles_enabled": [
+                "all_access",
+                "security_rest_api_access",
+            ],
+            # The security plugin will accept TLS client certs if certs but doesn't require them
+            # TODO this may be set to REQUIRED if we want to ensure certs provided by the client app
+            "plugins.security.ssl.http.clientauth_mode": "OPTIONAL",
+        }
+
+    def _opensearch_general_config(self) -> dict[str, Any]:
+        deployment_desc = self.state.application.deployment_desc
+        assert deployment_desc
+
+        return {
+            "cluster.name": deployment_desc.config.cluster_name,
+            "node.name": self.state.unit_name,
+            "network.host": ["_site_", *self.state.network_hosts],
+            "http.publish_host": self.workload.get_host_public_ip()
+            or self.state.network_ingress_address,
+            "node.roles": self.state.computed_roles(),
+            "node.attr.app_id": deployment_desc.app.id,  # Set the current app full id
+            "path.data": self.workload.paths.data.as_posix(),
+            "path.logs": self.workload.paths.logs.as_posix(),
+            "path.home": self.workload.paths.home.as_posix(),
+        }
+
+    def _opensearch_host_config(self) -> dict[str, Any]:
+        return {"network.publish_host": self.state.host_ip} if self.state.host_ip else {}
+
+    def _openseearch_temperature_config(self) -> dict[str, Any]:
+        deployment_desc = self.state.application.deployment_desc
+        assert deployment_desc
+
+        return (
+            {"node.attr.temp": deployment_desc.config.data_temperature}
+            if deployment_desc.config.data_temperature
+            else {}
+        )
+
+    def _opensearch_manager_config(self) -> dict[str, Any]:
+        nodes = self.cluster_manager.get_nodes(False)
+        computed_roles = self.state.computed_roles()
+        cm_names = self.cluster_manager.get_cluster_managers_names(nodes)
+        cm_ips = self.cluster_manager.get_cluster_managers_ips(nodes)
+
+        self.cluster_manager.configure_bootstrap_contributors(computed_roles, cm_names, cm_ips)
+
+        self.set_node(
+            cm_ips=list(set(cm_ips)),
+        )
+
+        return (
+            {
+                "cluster.initial_cluster_manager_nodes": cm_names,
+            }
+            if "cluster_manager" in computed_roles and self.state.server.is_bootstrap_contributor
+            else {}
+        )
+
+    def _opensearch_admin_tls_config(self) -> dict[str, Any]:
+        admin_secrets = self.state.secrets.get_object(Scope.APP, CertType.APP_ADMIN.val, peek=True)
+        return (
+            {
+                "plugins.security.authcz.admin_dn": [
+                    normalized_tls_subject(admin_secrets["subject"])
+                ]
+            }
+            if admin_secrets and "subject" in admin_secrets
+            else {}
+        )
+
+    def _opensearch_tls_config(self, cert_type: CertType) -> dict[str, Any]:
+        layer = "http" if cert_type == CertType.UNIT_HTTP else "transport"
+
+        if not (
+            admin_secrets := self.state.secrets.get_object(
+                Scope.APP, CertType.APP_ADMIN.val, peek=True
+            )
+        ):
+            return {}
+
+        if not (truststore_pwd := admin_secrets.get("truststore-password")):
+            return {}
+
+        if not (
+            cert_secret := self.state.secrets.get_object(Scope.UNIT, cert_type.val, peek=True)
+        ):
+            return {}
+
+        if not (keystore_pwd := cert_secret.get("keystore-password")):
+            return {}
+
+        return {
+            f"plugins.security.ssl.{layer}.keystore_type": "PKCS12",
+            f"plugins.security.ssl.{layer}.keystore_filepath": f"{self.workload.paths.certs_relative}/{cert_type}.p12",
+            f"plugins.security.ssl.{layer}.truststore_type": "PKCS12",
+            f"plugins.security.ssl.{layer}.truststore_filepath": f"{self.workload.paths.certs_relative}/ca.p12",
+            f"plugins.security.ssl.{layer}.keystore_alias": cert_type.val,
+            f"plugins.security.ssl.{layer}.keystore_keypassword": keystore_pwd,
+            f"plugins.security.ssl.{layer}.keystore_password": keystore_pwd,
+            f"plugins.security.ssl.{layer}.truststore_password": truststore_pwd,
+            f"plugins.security.ssl.{layer}.enabled_protocols": "TLSv1.2",
+        }
 
     @property
     def yaml_setter(self):
@@ -37,88 +183,15 @@ class ConfigManager(BaseManager):
 
     def set_node(
         self,
-        app: App,
-        cluster_name: str,
-        unit_name: str,
-        roles: list[str],
-        cm_names: list[str],
         cm_ips: list[str],
-        contribute_to_bootstrap: bool,
-        node_temperature: str | None = None,
     ) -> None:
         """Set base config for each node in the cluster."""
-        self.yaml_setter.put(self.CONFIG_YML, "cluster.name", cluster_name)
-        self.yaml_setter.put(self.CONFIG_YML, "node.name", unit_name)
-        self.yaml_setter.put(
-            self.CONFIG_YML, "network.host", ["_site_"] + self.state.network_hosts
-        )
-        if self.state.host_ip:
-            self.yaml_setter.put(self.CONFIG_YML, "network.publish_host", self.state.host_ip)
-        public_address = self.workload.get_host_public_ip() or self.state.network_ingress_address
-        self.yaml_setter.put(self.CONFIG_YML, "http.publish_host", public_address)
-
-        self.yaml_setter.put(self.CONFIG_YML, "node.roles", roles, inline_array=len(roles) == 0)
-        if node_temperature:
-            self.yaml_setter.put(self.CONFIG_YML, "node.attr.temp", node_temperature)
-        else:
-            self.yaml_setter.delete(self.CONFIG_YML, "node.attr.temp")
-
-        # Set the current app full id
-        self.yaml_setter.put(self.CONFIG_YML, "node.attr.app_id", app.id)
-
-        # This allows the new CMs to be discovered automatically (hot reload of unicast_hosts.txt)
-        self.yaml_setter.put(self.CONFIG_YML, "discovery.seed_providers", "file")
         self.add_seed_hosts(cm_ips)
-
-        if "cluster_manager" in roles and contribute_to_bootstrap:  # cluster NOT bootstrapped yet
-            self.yaml_setter.put(
-                self.CONFIG_YML, "cluster.initial_cluster_manager_nodes", cm_names
-            )
-
-        self.yaml_setter.put(self.CONFIG_YML, "path.data", str(self.workload.paths.data))
-        self.yaml_setter.put(self.CONFIG_YML, "path.logs", str(self.workload.paths.logs))
 
         self.yaml_setter.replace(self.JVM_OPTIONS, "=logs/", f"={self.workload.paths.logs}/")
 
-        self.yaml_setter.put(self.CONFIG_YML, "plugins.security.disabled", False)
-        self.yaml_setter.put(self.CONFIG_YML, "plugins.security.ssl.http.enabled", True)
-        self.yaml_setter.put(
-            self.CONFIG_YML,
-            "plugins.security.ssl.transport.enforce_hostname_verification",
-            True,
-        )
-
-        # security plugin rest API access
-        self.yaml_setter.put(
-            self.CONFIG_YML,
-            "plugins.security.restapi.roles_enabled",
-            ["all_access", "security_rest_api_access"],
-        )
-        # to use the PUT and PATCH methods of the security rest API
-        self.yaml_setter.put(
-            self.CONFIG_YML,
-            "plugins.security.unsupported.restapi.allow_securityconfig_modification",
-            True,
-        )
-
-        # enable hot reload of TLS certs (without restarting the node)
-        self.yaml_setter.put(
-            self.CONFIG_YML,
-            "plugins.security.ssl_cert_reload_enabled",
-            True,
-        )
-
-    def cleanup_initial_cluster_managers(self):
-        """Update the opensearch.yaml by deleting initiali_cluster_manager_nodes."""
-        self.yaml_setter.delete(self.CONFIG_YML, "cluster.initial_cluster_manager_nodes")
-
     def set_client_auth(self):
         """Configure TLS and basic http for clients."""
-        # The security plugin will accept TLS client certs if certs but doesn't require them
-        # TODO this may be set to REQUIRED if we want to ensure certs provided by the client app
-        self.yaml_setter.put(
-            self.CONFIG_YML, "plugins.security.ssl.http.clientauth_mode", "OPTIONAL"
-        )
 
         self.yaml_setter.put(
             self.SECURITY_CONFIG_YML,
@@ -221,58 +294,6 @@ class ConfigManager(BaseManager):
         if cm_ips_set:
             lines = "\n".join([entry for entry in cm_ips_set if entry.strip()])
             self.workload.paths.seed_hosts.write_text(f"{lines}\n")
-
-    def set_admin_tls_conf(self, secrets: dict[str, Any]):
-        """Configures the admin certificate."""
-        self.yaml_setter.put(
-            self.CONFIG_YML,
-            "plugins.security.authcz.admin_dn/{}",
-            normalized_tls_subject(secrets["subject"]),
-        )
-
-    def set_node_tls_conf(self, cert_type: CertType, truststore_pwd: str, keystore_pwd: str):
-        """Configures TLS for nodes."""
-        target_conf_layer = "http" if cert_type == CertType.UNIT_HTTP else "transport"
-
-        for store_type, cert in [("keystore", target_conf_layer), ("truststore", "ca")]:
-            self.yaml_setter.put(
-                self.CONFIG_YML,
-                f"plugins.security.ssl.{target_conf_layer}.{store_type}_type",
-                "PKCS12",
-            )
-
-            self.yaml_setter.put(
-                self.CONFIG_YML,
-                f"plugins.security.ssl.{target_conf_layer}.{store_type}_filepath",
-                f"{self.workload.paths.certs_relative}/{cert if cert == 'ca' else cert_type.val}.p12",
-            )
-
-        self.yaml_setter.put(
-            self.CONFIG_YML,
-            f"plugins.security.ssl.{target_conf_layer}.keystore_alias",
-            cert_type.val,
-        )
-        self.yaml_setter.put(
-            self.CONFIG_YML,
-            f"plugins.security.ssl.{target_conf_layer}.keystore_keypassword",
-            keystore_pwd,
-        )
-
-        for store_type, pwd in [
-            ("keystore", keystore_pwd),
-            ("truststore", truststore_pwd),
-        ]:
-            self.yaml_setter.put(
-                self.CONFIG_YML,
-                f"plugins.security.ssl.{target_conf_layer}.{store_type}_password",
-                pwd,
-            )
-
-        self.yaml_setter.put(
-            self.CONFIG_YML,
-            f"plugins.security.ssl.{target_conf_layer}.enabled_protocols",
-            "TLSv1.2",
-        )
 
     def set_profile_configuration_if_needed(
         self, current_profile: OpenSearchProfile, config_profile: OpenSearchProfile

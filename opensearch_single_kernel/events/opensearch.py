@@ -69,7 +69,8 @@ class OpenSearchEventsHandler(Object):
         self.framework.observe(self.charm.on.start, self._on_start)
         self.framework.observe(self.charm.on.secret_changed, self._on_secret_changed)
         self.framework.observe(
-            self.charm.on[NODE_LOCK_RELATION].relation_changed, self._on_node_lock_relation_changed
+            self.charm.on[NODE_LOCK_RELATION].relation_changed,
+            self._on_node_lock_relation_changed,
         )
         self.framework.observe(self.charm.on.leader_elected, self._on_leader_elected)
         self.framework.observe(self.charm.on.config_changed, self._on_config_changed)
@@ -201,7 +202,8 @@ class OpenSearchEventsHandler(Object):
             self.charm.status.clear(CharmStatuses.INVALID_PROFILE_CONFIG_OPTION)
         except ValueError:
             logger.error(
-                "Invalid profile configuration. Value: %s", self.charm.state.config.get("profile")
+                "Invalid profile configuration. Value: %s",
+                self.charm.state.config.get("profile"),
             )
             self.charm.status.set(CharmStatuses.INVALID_PROFILE_CONFIG_OPTION)
             return
@@ -318,7 +320,8 @@ class OpenSearchEventsHandler(Object):
 
         if self.charm.unit.is_leader():
             self.apply_status_from_deployment_desc(
-                self.charm.state.application.deployment_desc, show_status_only_once=False
+                self.charm.state.application.deployment_desc,
+                show_status_only_once=False,
             )
         if (
             not self.charm.state.application.is_admin_user_initialized
@@ -476,11 +479,9 @@ class OpenSearchEventsHandler(Object):
         self.charm.status.set(CharmStatuses.WAITING_TO_START)
 
         try:
-            # Retrieve the nodes of the cluster, needed to configure this node
-            nodes = self.charm.cluster_manager.get_nodes(False)
-
             # Set the configuration of the node
-            self._set_node_conf(nodes)
+            # Retrieve the nodes of the cluster, needed to configure this node
+            self.charm.config_manager.render_opensearch_config()
         except OpenSearchHttpError as e:
             logger.debug(f"error getting the nodes: {e}")
             self.charm.lock_manager.release()
@@ -543,7 +544,7 @@ class OpenSearchEventsHandler(Object):
             self.charm.cluster_manager.update_bootstrap_state(
                 cleanup_application=self.charm.unit.is_leader()
             )
-            self.charm.config_manager.cleanup_initial_cluster_managers()
+            self.charm.config_manager.render_opensearch_config()
 
         self.charm.exclusions_manager.delete_current()
 
@@ -673,7 +674,8 @@ class OpenSearchEventsHandler(Object):
             self.charm.profiles_manager.config_profile
         except ValueError:
             logger.error(
-                "Invalid profile configuration. Value: %s", self.charm.state.config.get("profile")
+                "Invalid profile configuration. Value: %s",
+                self.charm.state.config.get("profile"),
             )
             self.charm.status.set(CharmStatuses.INVALID_PROFILE_CONFIG_OPTION)
             return [CharmStatuses.INVALID_PROFILE_CONFIG_OPTION.value.message]
@@ -746,30 +748,6 @@ class OpenSearchEventsHandler(Object):
             return
 
         self.charm.app.status = BlockedStatus(deployment_desc.state.message)
-
-    def _set_node_conf(self, nodes: list[Node]) -> None:
-        """Set the configuration of the current node / unit."""
-        computed_roles = self.charm.state.computed_roles()
-
-        cm_names = self.charm.cluster_manager.get_cluster_managers_names(nodes)
-        cm_ips = self.charm.cluster_manager.get_cluster_managers_ips(nodes)
-        contribute_to_bootstrap = self.charm.cluster_manager.configure_bootstrap_contributors(
-            computed_roles,
-            cm_names,
-            cm_ips,
-        )
-
-        deployment_desc = self.charm.state.application.deployment_desc
-        self.charm.config_manager.set_node(
-            app=deployment_desc.app,
-            cluster_name=deployment_desc.config.cluster_name,
-            unit_name=self.charm.state.unit_name,
-            roles=computed_roles,
-            cm_names=list(set(cm_names)),
-            cm_ips=list(set(cm_ips)),
-            contribute_to_bootstrap=contribute_to_bootstrap,
-            node_temperature=deployment_desc.config.data_temperature,
-        )
 
     def _on_secret_changed(self, event: SecretChangedEvent) -> None:  # noqa: C901
         """Refresh secret and re-run corresponding actions if needed."""
