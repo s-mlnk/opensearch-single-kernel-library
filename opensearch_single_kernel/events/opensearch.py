@@ -182,7 +182,7 @@ class OpenSearchEventsHandler(Object):
 
     def _on_config_changed(self, event: ConfigChangedEvent) -> None:
         """On config changed event. Useful for IP changes or for user provided config changes."""
-        if self.charm.config_manager.update_host_if_needed():
+        if self.charm.config_manager.render_opensearch_config():
             # TODO: Handle TLS functions
             pass
 

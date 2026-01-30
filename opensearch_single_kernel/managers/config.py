@@ -5,17 +5,19 @@
 """OpenSearch Config manager."""
 
 import logging
-from collections import namedtuple
 from typing import Any
 
 import yaml
 
 from opensearch_single_kernel.common.constants import CertType, Scope
-from opensearch_single_kernel.core.models import App, Node, OpenSearchProfile
+from opensearch_single_kernel.core.models import Node, OpenSearchProfile
 from opensearch_single_kernel.core.state import ClusterState
 from opensearch_single_kernel.managers.cluster import ClusterManager
 from opensearch_single_kernel.utils.config import YamlConfigSetter
-from opensearch_single_kernel.utils.helpers import normalized_tls_subject
+from opensearch_single_kernel.utils.helpers import (
+    deployment_type,
+    normalized_tls_subject,
+)
 from opensearch_single_kernel.workload.base import BaseWorkload
 
 logger = logging.getLogger(__name__)
@@ -82,36 +84,37 @@ class ConfigManager:
         }
 
     def _opensearch_general_config(self) -> dict[str, Any]:
-        deployment_desc = self.state.application.deployment_desc
-        assert deployment_desc
-
-        return {
-            "cluster.name": deployment_desc.config.cluster_name,
-            "node.name": self.state.unit_name,
-            "network.host": ["_site_", *self.state.network_hosts],
-            "http.publish_host": self.workload.get_host_public_ip()
-            or self.state.network_ingress_address,
-            "node.roles": self.state.computed_roles(),
-            "node.attr.app_id": deployment_desc.app.id,  # Set the current app full id
-            "path.data": self.workload.paths.data.as_posix(),
-            "path.logs": self.workload.paths.logs.as_posix(),
-            "path.home": self.workload.paths.home.as_posix(),
-        }
+        return (
+            {
+                "cluster.name": deployment_desc.config.cluster_name,
+                "node.name": self.state.unit_name,
+                "network.host": sorted(["_site_", *self.state.network_hosts]),
+                "http.publish_host": self.workload.get_host_public_ip()
+                or self.state.network_ingress_address,
+                "node.roles": sorted(self.state.computed_roles()),
+                "node.attr.app_id": deployment_desc.app.id,  # Set the current app full id
+                "path.data": self.workload.paths.data.as_posix(),
+                "path.logs": self.workload.paths.logs.as_posix(),
+                "path.home": self.workload.paths.home.as_posix(),
+            }
+            if (deployment_desc := self.state.application.deployment_desc)
+            else {}
+        )
 
     def _opensearch_host_config(self) -> dict[str, Any]:
         return {"network.publish_host": self.state.host_ip} if self.state.host_ip else {}
 
     def _openseearch_temperature_config(self) -> dict[str, Any]:
-        deployment_desc = self.state.application.deployment_desc
-        assert deployment_desc
-
         return (
-            {"node.attr.temp": deployment_desc.config.data_temperature}
-            if deployment_desc.config.data_temperature
+            {"node.attr.temp": self._opensearch_data_temperature}
+            if self._opensearch_data_temperature
             else {}
         )
 
     def _opensearch_manager_config(self) -> dict[str, Any]:
+        if not self.state.application.deployment_desc:
+            return {}
+
         nodes = self.cluster_manager.get_nodes(False)
         computed_roles = self.state.computed_roles()
         cm_names = self.cluster_manager.get_cluster_managers_names(nodes)
@@ -132,49 +135,72 @@ class ConfigManager:
         )
 
     def _opensearch_admin_tls_config(self) -> dict[str, Any]:
-        admin_secrets = self.state.secrets.get_object(Scope.APP, CertType.APP_ADMIN.val, peek=True)
         return (
-            {
-                "plugins.security.authcz.admin_dn": [
-                    normalized_tls_subject(admin_secrets["subject"])
-                ]
-            }
-            if admin_secrets and "subject" in admin_secrets
+            {"plugins.security.authcz.admin_dn": [self._opensearch_tls_subject]}
+            if self._opensearch_tls_subject
             else {}
         )
 
     def _opensearch_tls_config(self, cert_type: CertType) -> dict[str, Any]:
         layer = "http" if cert_type == CertType.UNIT_HTTP else "transport"
 
-        if not (
-            admin_secrets := self.state.secrets.get_object(
-                Scope.APP, CertType.APP_ADMIN.val, peek=True
+        return (
+            {
+                f"plugins.security.ssl.{layer}.keystore_type": "PKCS12",
+                f"plugins.security.ssl.{layer}.keystore_filepath": f"{self.workload.paths.certs_relative}/{cert_type}.p12",
+                f"plugins.security.ssl.{layer}.truststore_type": "PKCS12",
+                f"plugins.security.ssl.{layer}.truststore_filepath": f"{self.workload.paths.certs_relative}/ca.p12",
+                f"plugins.security.ssl.{layer}.keystore_alias": cert_type.val,
+                f"plugins.security.ssl.{layer}.keystore_keypassword": keystore_pwd,
+                f"plugins.security.ssl.{layer}.keystore_password": keystore_pwd,
+                f"plugins.security.ssl.{layer}.truststore_password": truststore_pwd,
+                f"plugins.security.ssl.{layer}.enabled_protocols": "TLSv1.2",
+            }
+            if (truststore_pwd := self._opensearch_truststore_pwd())
+            and (keystore_pwd := self._opensearch_keystore_pwd(cert_type))
+            else {}
+        )
+
+    @property
+    def _opensearch_data_temperature(self) -> str | None:
+        return (
+            deployment_desc.config.data_temperature
+            if (deployment_desc := self.state.application.deployment_desc)
+            else None
+        )
+
+    @property
+    def _opensearch_tls_subject(self) -> str | None:
+        return (
+            normalized_tls_subject(admin_secrets["subject"])
+            if (
+                admin_secrets := self.state.secrets.get_object(
+                    Scope.APP, CertType.APP_ADMIN.val, peek=True
+                )
             )
-        ):
-            return {}
+            and "subject" in admin_secrets
+            else None
+        )
 
-        if not (truststore_pwd := admin_secrets.get("truststore-password")):
-            return {}
+    def _opensearch_truststore_pwd(self) -> str | None:
+        return (
+            truststore_pwd
+            if (
+                admin_secrets := self.state.secrets.get_object(
+                    Scope.APP, CertType.APP_ADMIN.val, peek=True
+                )
+            )
+            and (truststore_pwd := admin_secrets.get("truststore-password"))
+            else None
+        )
 
-        if not (
-            cert_secret := self.state.secrets.get_object(Scope.UNIT, cert_type.val, peek=True)
-        ):
-            return {}
-
-        if not (keystore_pwd := cert_secret.get("keystore-password")):
-            return {}
-
-        return {
-            f"plugins.security.ssl.{layer}.keystore_type": "PKCS12",
-            f"plugins.security.ssl.{layer}.keystore_filepath": f"{self.workload.paths.certs_relative}/{cert_type}.p12",
-            f"plugins.security.ssl.{layer}.truststore_type": "PKCS12",
-            f"plugins.security.ssl.{layer}.truststore_filepath": f"{self.workload.paths.certs_relative}/ca.p12",
-            f"plugins.security.ssl.{layer}.keystore_alias": cert_type.val,
-            f"plugins.security.ssl.{layer}.keystore_keypassword": keystore_pwd,
-            f"plugins.security.ssl.{layer}.keystore_password": keystore_pwd,
-            f"plugins.security.ssl.{layer}.truststore_password": truststore_pwd,
-            f"plugins.security.ssl.{layer}.enabled_protocols": "TLSv1.2",
-        }
+    def _opensearch_keystore_pwd(self, cert_type: CertType) -> str | None:
+        return (
+            keystore_pwd
+            if (cert_secret := self.state.secrets.get_object(Scope.UNIT, cert_type.val, peek=True))
+            and (keystore_pwd := cert_secret.get("keystore-password"))
+            else None
+        )
 
     @property
     def yaml_setter(self):
@@ -215,43 +241,6 @@ class ConfigManager:
             self.JVM_OPTIONS,
             "-Djdk.tls.client.protocols=TLSv1.2",
         )
-
-    def update_host_if_needed(self) -> bool:
-        """Update the opensearch config with the current network hosts, after having started.
-
-        Returns: True if host updated, False otherwise.
-        """
-        NetworkHost = namedtuple("NetworkHost", ["entry", "old", "new"])
-
-        node = self.yaml_setter.load(self.CONFIG_YML)
-        result = False
-        for host in [
-            NetworkHost(
-                "network.host",
-                set(node.get("network.host", [])),
-                set(["_site_"] + self.state.network_hosts),
-            ),
-            NetworkHost(
-                "network.publish_host",
-                node.get("network.publish_host"),
-                self.state.host_ip,
-            ),
-            NetworkHost(
-                "http.publish_host",
-                node.get("http.publish_host"),
-                self.workload.get_host_public_ip() or self.state.network_ingress_address,
-            ),
-        ]:
-            if not host.old:
-                # Unit not configured yet
-                continue
-
-            if host.old != host.new:
-                logger.info(f"Updating {host.entry} from: {host.old} - to: {host.new}")
-                self.yaml_setter.put(self.CONFIG_YML, host.entry, host.new)
-                result = True
-
-        return result
 
     def reconfigure_unit(self) -> bool:
         """Reconfigure unit based on the nodes_config.
