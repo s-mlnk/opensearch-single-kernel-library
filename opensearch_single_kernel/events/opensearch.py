@@ -7,6 +7,7 @@
 import logging
 import time
 from datetime import datetime
+from time import time_ns
 from typing import TYPE_CHECKING
 
 from ops import (
@@ -15,6 +16,10 @@ from ops import (
     InstallEvent,
     LeaderElectedEvent,
     Object,
+    RelationChangedEvent,
+    RelationCreatedEvent,
+    RelationDepartedEvent,
+    RelationJoinedEvent,
     SecretChangedEvent,
     StartEvent,
     UpdateStatusEvent,
@@ -24,10 +29,12 @@ from opensearch_single_kernel.common.constants import (
     COS_USER,
     NODE_LOCK_RELATION,
     OPENSEARCH_SYSTEM_USERS,
+    PEER_RELATION,
     CertType,
     DeploymentType,
     Directive,
     HealthColors,
+    Scope,
     StartMode,
     Substrates,
 )
@@ -48,6 +55,7 @@ from opensearch_single_kernel.events.custom_events import (
     RestartOpenSearch,
     StartOpenSearch,
 )
+from opensearch_single_kernel.utils.helpers import format_unit_name
 from opensearch_single_kernel.utils.status import Status
 
 if TYPE_CHECKING:
@@ -73,10 +81,156 @@ class OpenSearchEventsHandler(Object):
         self.framework.observe(self.charm.on.leader_elected, self._on_leader_elected)
         self.framework.observe(self.charm.on.config_changed, self._on_config_changed)
         self.framework.observe(self.charm.on.update_status, self._on_update_status)
+        self.framework.observe(
+            self.charm.on[PEER_RELATION].relation_created, self._on_peer_relation_created
+        )
+        self.framework.observe(
+            self.charm.on[PEER_RELATION].relation_joined, self._on_peer_relation_joined
+        )
+        self.framework.observe(
+            self.charm.on[PEER_RELATION].relation_changed, self._on_peer_relation_changed
+        )
+        self.framework.observe(
+            self.charm.on[PEER_RELATION].relation_departed, self._on_peer_relation_departed
+        )
 
         # --- OpenSearch Custom events ---
         self.framework.observe(self.charm._start_opensearch_event, self._on_start_opensearch)
         self.framework.observe(self.charm._restart_opensearch_event, self._on_restart_opensearch)
+
+        # Ensure that only one instance of the `_on_peer_relation_changed` handler exists
+        # in the deferred event queue
+        self._is_peer_rel_changed_deferred = False
+
+    def _on_peer_relation_created(self, event: RelationCreatedEvent):
+        """Event received by the new node joining the cluster."""
+        # TODO: Handle upgrades
+        # if self.upgrade_in_progress:
+        # logger.warning(
+        #    "Adding units during an upgrade is not supported. The charm may be in a broken,
+        #  unrecoverable state"
+        # )
+
+    def _on_peer_relation_joined(self, event: RelationJoinedEvent):
+        """Event received by all units when a new node joins the cluster."""
+        # TODO: Handle upgrades
+        # if self.upgrade_in_progress:
+        #    logger.warning(
+        #        "Adding units during an upgrade is not supported. The charm may be in a broken,
+        #  unrecoverable state"
+        #    )
+
+    def _on_peer_relation_changed(self, event: RelationChangedEvent):  # noqa C901
+        """Handle peer relation changes."""
+        if self.charm.cluster_manager.opensearch_client.is_node_up():
+            health = self.charm.status.apply_health(unit=self.charm.unit.is_leader())
+            if self._is_peer_rel_changed_deferred:
+                # We already deferred this event during this Juju event. Retry on the next
+                # Juju event.
+                return
+
+            if health in [HealthColors.UNKNOWN, HealthColors.YELLOW_TEMP]:
+                # we defer because we want the temporary status to be updated
+                logger.debug("Cluster health temp yellow or unknown. Deferring event.")
+                event.defer()
+                # If the handler is called again within this Juju hook, we will abandon the event
+                self._is_peer_rel_changed_deferred = True
+
+        # we want to have the most up-to-date info broadcasted to related sub-clusters
+        # if self.opensearch_peer_cm.is_provider():
+        # self.peer_cluster_provider.refresh_relation_data(event, can_defer=False)
+
+        # update any orchestrators about planned units
+        # if self.opensearch_peer_cm.is_consumer():
+        # self.peer_cluster_requirer.refresh_requirer_relation_data()
+
+        # for relation in self.model.relations.get(ClientRelationName, []):
+        # self.opensearch_provider.update_endpoints(relation)
+
+        # register new cm addresses on every node
+        self.charm.config_manager.add_cm_addresses_to_conf()
+
+        if self.charm.unit.is_leader():
+            # Recompute the node roles in case self-healing didn't trigger leader related event
+            self.charm.cluster_manager.recompute_roles_if_needed()
+            # TODO: Handle once large deployments are implemented
+            # if self.peers_data.get(Scope.APP, "missing_relations"):
+            # for failover promotions: this flag indicates that the user needs
+            # to relate integrators to this new main orchestrator
+            # self.peer_cluster_provider.check_credentials_with_missing_relations()
+            # if self.model.relations[PeerClusterRelationName]:
+            # self.peer_cluster_requirer.apply_orchestrator_status()
+        elif event.relation.data.get(event.app):
+            # if app_data + app_data["nodes_config"]: Reconfigure + restart node on the unit
+            if self.charm.config_manager.reconfigure_unit():
+                self.charm.status.set(CharmStatuses.WAITING_TO_START)
+                logger.debug("Restarting opensearch due to reconfiguring node roles")
+                self.charm._restart_opensearch_event.emit()
+
+        # check requirements
+        if self.charm.state.application.deployment_desc:
+            self.check_profile_missing_requirements()
+
+        if not (unit_data := event.relation.data.get(event.unit)):
+            return
+        # TODO: Handle exclusions
+        current_node = self.charm.config_manager.current_node
+        self.charm.exclusions_manager.cleanup(
+            Scope.APP if self.charm.unit.is_leader() else Scope.UNIT,
+            current_node,
+        )
+
+        if self.charm.unit.is_leader() and unit_data.get("bootstrap_contributor"):
+            contributor_count = self.charm.state.application.bootstrap_contributors_count
+            self.charm.state.application.bootstrap_contributors_count = contributor_count + 1
+
+    def _on_peer_relation_departed(self, event: RelationDepartedEvent):
+        """Relation departed event."""
+        # TODO: Handle upgrades
+        # if self.upgrade_in_progress:
+        #    logger.warning(
+        #        "Removing units during an upgrade is not supported. The charm may be in a broken,
+        #  unrecoverable state"
+        #    )
+        if not (self.charm.unit.is_leader() and len(event.relation.units) > 0):
+            return
+
+        if not self.charm.cluster_manager.opensearch_client.is_node_up():
+            logger.debug("Node is not up. Deferring event.")
+            event.defer()
+            return
+
+        # Now, we register in the leader application the presence of departing unit's name
+        # We need to save them as we have a count limit
+        if (
+            not (deployment_desc := self.charm.state.application.deployment_desc)
+            or not event.departing_unit
+        ):
+            # No deployment description present
+            # that happens in the very last stages of the application removal
+            return
+
+        current_app = deployment_desc.app
+        remaining_nodes = [
+            node
+            for node in self.charm.cluster_manager.get_nodes(True)
+            if node.name != format_unit_name(event.departing_unit, app=current_app)
+        ]
+
+        self.charm.status.apply_health(wait_for_green_first=True, unit=False)
+
+        n_units = sum(1 for node in remaining_nodes if node.app.id == current_app.id)
+        if n_units == self.app.planned_units():
+            self.charm.cluster_manager.compute_and_broadcast_updated_topology(remaining_nodes)
+        else:
+            logger.debug(
+                f"Waiting for units to leave: expecting {self.app.planned_units()}, currently {n_units}. Deferring event."
+            )
+            event.defer()
+        # TODO: Handle exclusions
+        # self.opensearch_exclusions.add_to_cleanup_list(
+        # unit_name=format_unit_name(event.departing_unit.name, deployment_desc.app)
+        # )
 
     def _on_update_status(self, event: UpdateStatusEvent):  # noqa: C901
         """On update status event.
@@ -181,18 +335,27 @@ class OpenSearchEventsHandler(Object):
     def _on_config_changed(self, event: ConfigChangedEvent) -> None:
         """On config changed event. Useful for IP changes or for user provided config changes."""
         if self.charm.config_manager.update_host_if_needed():
-            # TODO: Handle TLS functions
-            pass
+            # This happens when the unit IP has changed
+            self.charm.tls_events.on_unit_ip_changed(event)
 
         if self.charm.unit.is_leader():
             self.charm.cluster_manager.reconcile_cluster_config()
+            if (
+                self.charm.state.application.deployment_desc.start
+                == StartMode.WITH_GENERATED_ROLES
+            ):
+                # trigger roles change on the leader, other units will have their peer-rel-changed
+                # event triggered
+                self.trigger_peer_rel_changed(on_other_units=False, on_current_unit=True)
             self.apply_status_from_deployment_desc(self.charm.state.application.deployment_desc)
 
-            # TODO: Handle cluster change to main orchestrator
+        # TODO: Handle cluster change to main orchestrator
         if not self.charm.state.application.deployment_desc:
             logger.debug("Deployment description not yet computed, deferring event.")
             event.defer()
             return
+
+        # TODO: Handle upgrade in progress
 
         try:
             config_profile = self.charm.profiles_manager.config_profile
@@ -217,6 +380,7 @@ class OpenSearchEventsHandler(Object):
                 "Restarting opensearch due to config change: profile_restart_needed=%s",
                 profile_restart_needed,
             )
+            logger.debug("boutou======> We are restarting opensearch due to config changed")
             self.charm._restart_opensearch_event.emit()
 
     def _on_leader_elected(self, event: LeaderElectedEvent) -> None:  # noqa: C901
@@ -250,6 +414,9 @@ class OpenSearchEventsHandler(Object):
                     # Restart needed
                     self.charm.status.set(CharmStatuses.WAITING_TO_START)
                     logger.debug("Restarting opensearch due to reconfiguring node roles")
+                    logger.debug(
+                        "boutou======> We are restarting opensearch due to leader elected"
+                    )
                     self.charm._restart_opensearch_event.emit()
 
             return
@@ -436,7 +603,8 @@ class OpenSearchEventsHandler(Object):
             # self.peer_cluster_provider.refresh_relation_data(event, can_defer=False)
             return
 
-        self.charm.state.server.update({"started": None})
+        if self.charm.state.server.started:
+            self.charm.state.server.update({"started": None})
 
         # Check if we can start. This means we will check
         # - profiles requirements
@@ -544,15 +712,19 @@ class OpenSearchEventsHandler(Object):
             )
             self.charm.config_manager.cleanup_initial_cluster_managers()
 
-        self.charm.exclusions_manager.delete_current()
+        current_node = self.charm.config_manager.current_node
+        self.charm.exclusions_manager.delete_current(
+            node=current_node,
+            scope=Scope.APP if self.charm.unit.is_leader() else Scope.UNIT,
+        )
 
         self.charm.lock_manager.release()
 
         # Add a timestamp to always trigger relation changed
         self.charm.state.server.update({"started": str(time.time())})
 
-        # TODO: OpenSearch fixes
-
+        # Apply OpenSearch upstream recommended settings
+        self.charm.cluster_manager.apply_upstream_fixes()
         # apply cluster health
         self.charm.status.apply_health(wait_for_green_first=True, app=self.charm.unit.is_leader())
 
@@ -807,3 +979,22 @@ class OpenSearchEventsHandler(Object):
             )
         else:
             return self.is_cluster_healthy_to_start()
+
+    def trigger_peer_rel_changed(
+        self,
+        only_by_leader: bool = False,
+        on_other_units: bool = True,
+        on_current_unit: bool = False,
+    ) -> None:
+        """Force trigger a peer rel changed event."""
+        if only_by_leader and not self.charm.unit.is_leader():
+            return
+
+        if on_other_units or not on_current_unit:
+            if only_by_leader:
+                self.charm.state.application.update_ts = time_ns()
+            else:
+                self.charm.state.server.update_ts = time_ns()
+
+        if on_current_unit:
+            self.charm.on[PEER_RELATION].relation_changed.emit(self.charm.state.peer_relation)

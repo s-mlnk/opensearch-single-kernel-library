@@ -283,7 +283,7 @@ class LockManager(PeerLockManager):
         if host or alt_hosts:
             logger.debug("[Node lock] 1+ opensearch nodes online")
             try:
-                online_nodes = len(self.nodes(use_localhost=host is not None, hosts=alt_hosts))
+                online_nodes = len(self._nodes(use_localhost=host is not None, hosts=alt_hosts))
             except OpenSearchHttpError:
                 logger.exception("Error getting OpenSearch nodes")
                 return False

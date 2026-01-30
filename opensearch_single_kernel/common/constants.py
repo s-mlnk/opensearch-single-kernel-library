@@ -177,3 +177,12 @@ GCS_CREDENTIALS = "gcs-creds"
 # Messages
 PEER_CLUSTER_NO_RELATION = "Cannot start. Waiting for peer cluster relation..."
 PEER_CLUSTER_WRONG_RELATION = "Cluster name doesn't match with related cluster. Remove relation."
+CLUSTER_MANAGER_VOTING_ROLES_PROVIDED_INVALID = (
+    "cluster_manager and voting_only roles cannot be both set on the same nodes."
+)
+CLUSTER_MANAGER_ROLE_REMOVAL_FORBIDDEN = (
+    "Removal of cluster_manager role from deployment not allowed."
+)
+DATA_ROLE_REMOVAL_FORBIDDEN = (
+    "Removal of data role from current deployment not allowed - the data cannot be reallocated."
+)

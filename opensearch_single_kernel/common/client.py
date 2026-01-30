@@ -23,6 +23,7 @@ from tenacity import (
 )
 
 from opensearch_single_kernel.common.exceptions import OpenSearchHttpError
+from opensearch_single_kernel.core.models import App, Node
 from opensearch_single_kernel.workload.base import BaseWorkload
 
 logger = logging.getLogger(__name__)
@@ -43,6 +44,103 @@ class OpenSearchClient:
         self.workload = workload
         self.admin_secret = admin_secret
 
+    def apply_no_replication_to_index(
+        self,
+        index: str,
+    ) -> bool:
+        """Apply replication settings to an index."""
+        return self.request(
+            method="PUT",
+            endpoint=f"/{index}/_settings",
+            payload={"index": {"auto_expand_replicas": "0-all"}},
+        )
+
+    def fetch_voting_config_exclusions(self, alt_hosts: list[str] | None = None) -> set[str]:
+        """Fetch the voting exclusions config."""
+        resp = self.request(
+            "GET",
+            "/_cluster/state/metadata/voting_config_exclusions",
+            alt_hosts=alt_hosts,
+        )
+        return set(
+            sorted(
+                [
+                    node["node_name"]
+                    for node in resp["metadata"]["cluster_coordination"][
+                        "voting_config_exclusions"
+                    ]
+                ]
+            )
+        )
+
+    def remove_exclusions(self, exclusions: set[str], alt_hosts: list[str] | None = None) -> bool:
+        """Remove voting exclusions from OpenSearch cluster."""
+        response = self.request(
+            "DELETE",
+            "/_cluster/voting_config_exclusions?wait_for_removal=false",
+            alt_hosts=alt_hosts,
+            resp_status_code=True,
+        )
+        if response >= 400:
+            logger.debug("Failed to remove voting exclusions, response %s", response)
+            return False
+
+        logger.debug("Removed voting for:  %s", exclusions)
+        return True
+
+    def add_voting_exclusions(
+        self, exclusions: set[str], alt_hosts: list[str] | None = None
+    ) -> bool:
+        """Add voting exclusions to OpenSearch cluster."""
+        response = self.request(
+            "POST",
+            f"/_cluster/voting_config_exclusions?node_names={','.join(sorted(exclusions))}&timeout=1m",
+            alt_hosts=alt_hosts,
+            resp_status_code=True,
+            retries=3,
+        )
+        if response >= 400:
+            logger.debug("Failed to add voting exclusions, response %s", response)
+            return False
+
+        logger.debug("Added voting exclusions for:  %s", exclusions)
+        return True
+
+    def fetch_allocations(self, alt_hosts: list[str] | None = None) -> set[str]:
+        """Fetch the registered allocation exclusions."""
+        allocation_exclusions = set()
+        try:
+            resp = self.request("GET", "/_cluster/settings", alt_hosts=alt_hosts)
+            exclusions = resp["persistent"]["cluster"]["routing"]["allocation"]["exclude"]["_name"]
+            if exclusions:
+                allocation_exclusions = set(exclusions.split(","))
+        except KeyError:
+            # no allocation exclusion set
+            pass
+        finally:
+            return allocation_exclusions
+
+    def add_allocations(
+        self,
+        node: Node,
+        allocations: set[str] | None = None,
+        override: bool = False,
+        alt_hosts: list[str] | None = None,
+    ) -> bool:
+        """Register new allocation exclusions."""
+        try:
+            existing = set() if override else self.fetch_allocations(alt_hosts=alt_hosts)
+            all_allocs = existing.union(allocations if allocations is not None else {node.name})
+            response = self.request(
+                "PUT",
+                "/_cluster/settings",
+                {"persistent": {"cluster.routing.allocation.exclude._name": ",".join(all_allocs)}},
+                alt_hosts=alt_hosts,
+            )
+            return "acknowledged" in response
+        except OpenSearchHttpError:
+            return False
+
     def get_node_id(self, unit_name: str) -> str | None:
         """Get the OpenSearch node id corresponding to the unit.
 
@@ -57,6 +155,20 @@ class OpenSearchClient:
         for n_id, node in nodes.items():
             if node["name"] == unit_name:
                 return n_id
+
+    def get_current_node(self, node_id: str, unit_id: str, alt_hosts: list[str] | None) -> Node:
+        """Get the current OpenSearch node information."""
+        nodes = self.request("GET", f"/_nodes/{node_id}", alt_hosts=alt_hosts)
+
+        current_node = nodes["nodes"][node_id]
+        return Node(
+            name=current_node["name"],
+            roles=current_node["roles"],
+            ip=current_node["ip"],
+            app=App(id=current_node["attributes"]["app_id"]),
+            unit_id=unit_id,
+            temperature=current_node.get("attributes", {}).get("temp"),
+        )
 
     def get_roles(self, unit_name: str, alt_hosts: list[str] | None) -> list[str]:
         """Get the list of the roles assigned to this node.

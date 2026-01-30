@@ -22,9 +22,7 @@ METADATA = yaml.safe_load(Path("./tests/charms/opensearch_test_charm/metadata.ya
 APP_NAME = METADATA["name"]
 
 SERIES = "jammy"
-# TODO: restore multi-unit tests when charm scale up and scale down are implemented
-# UNIT_IDS = [0, 1, 2]
-UNIT_IDS = [0]
+UNIT_IDS = [0, 1, 2]
 IDLE_PERIOD = 75
 
 

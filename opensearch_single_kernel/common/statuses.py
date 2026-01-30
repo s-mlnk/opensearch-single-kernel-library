@@ -25,6 +25,7 @@ class CharmStatuses(Enum):
         "Relation broken with the TLS Operator while TLS not fully configured. Stopping OpenSearch."
     )
     TLS_CERTS_EXPIRATION_ERROR = BlockedStatus("The certificates:  need to be refreshed.")
+    TLS_NEW_CERTS_REQUESTED = MaintenanceStatus("Requesting new TLS certificates...")
 
     # Profiles
     INVALID_PROFILE_CONFIG_OPTION = BlockedStatus(

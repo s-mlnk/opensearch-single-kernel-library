@@ -514,6 +514,12 @@ class TlsManager(BaseManager):
             key_pwd=secrets.get("key-password"),
         )
 
+    def delete_stored_tls_resources(self):
+        """Delete the TLS resources of the unit that are stored on disk."""
+        for cert_type in [CertType.UNIT_TRANSPORT, CertType.UNIT_HTTP]:
+            certificate_path = self.workload.paths.certs / f"{cert_type}.p12"
+            certificate_path.unlink(missing_ok=True)
+
     def store_key_pair(
         self,
         name: str,

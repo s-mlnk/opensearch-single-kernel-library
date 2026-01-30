@@ -166,6 +166,36 @@ class OpenSearchServer(RelationState):
         """Update the value of 'certs_exp_checked_at'"""
         self.update({"certs_exp_checked_at": value})
 
+    @property
+    def allocation_exclusions_to_delete(self) -> set[str]:
+        """Return the value of 'allocation_exclusion_to_delete' from application databag."""
+        return set(
+            filter(
+                None,
+                self.relation_data.get("allocation-exclusions-to-delete", "").split(","),
+            )
+        )
+
+    @allocation_exclusions_to_delete.setter
+    def allocation_exclusions_to_delete(self, value: set[str]):
+        """Set the value of 'allocation_exclusion_to_delete' in application databag."""
+        self.update({"allocation-exclusions-to-delete": ",".join(value)})
+
+    @property
+    def delete_voting_exclusions(self) -> set[str]:
+        """Return the value of 'delete_voting_exclusions' from application databag."""
+        return set(
+            filter(
+                None,
+                self.relation_data.get("delete-voting-exclusions", "").split(","),
+            )
+        )
+
+    @delete_voting_exclusions.setter
+    def delete_voting_exclusions(self, value: set[str]):
+        """Set the value of 'delete_voting_exclusions' in application databag."""
+        self.update({"delete-voting-exclusions": ",".join(value)})
+
 
 class OpenSearchApplication(RelationState):
     """An OpenSearch Application is a charm application with a given role.
@@ -287,6 +317,36 @@ class OpenSearchApplication(RelationState):
     def update_ts(self, timestamp: int):
         """Update the value of 'update-ts' in the application databag."""
         self.update({"update-ts": str(timestamp)})
+
+    @property
+    def delete_voting_exclusions(self) -> set[str]:
+        """Return the value of 'delete_voting_exclusions' from application databag."""
+        return set(
+            filter(
+                None,
+                self.relation_data.get("delete-voting-exclusions", "").split(","),
+            )
+        )
+
+    @delete_voting_exclusions.setter
+    def delete_voting_exclusions(self, value: set[str]):
+        """Set the value of 'delete_voting_exclusions' in application databag."""
+        self.update({"delete-voting-exclusions": ",".join(value)})
+
+    @property
+    def allocation_exclusions_to_delete(self) -> set[str]:
+        """Return the value of 'allocation_exclusion_to_delete' from application databag."""
+        return set(
+            filter(
+                None,
+                self.relation_data.get("allocation-exclusions-to-delete", "").split(","),
+            )
+        )
+
+    @allocation_exclusions_to_delete.setter
+    def allocation_exclusions_to_delete(self, value: set[str]):
+        """Set the value of 'allocation_exclusion_to_delete' in application databag."""
+        self.update({"allocation-exclusions-to-delete": ",".join(value)})
 
     def is_data_role_in_cluster_fleet_apps(self) -> bool:
         """Look for data-role through all the roles of all the nodes in all applications"""

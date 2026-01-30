@@ -6,8 +6,19 @@
 
 import logging
 from collections import namedtuple
+from functools import cached_property
 
-from opensearch_single_kernel.common.constants import CertType
+from pydantic import ValidationError
+
+from opensearch_single_kernel.common.constants import (
+    GENERATED_ROLES,
+    CertType,
+    StartMode,
+)
+from opensearch_single_kernel.common.exceptions import (
+    OpenSearchError,
+    OpenSearchHttpError,
+)
 from opensearch_single_kernel.core.models import App, Node, OpenSearchProfile
 from opensearch_single_kernel.core.state import ClusterState
 from opensearch_single_kernel.managers.base import BaseManager
@@ -33,6 +44,10 @@ class ConfigManager(BaseManager):
     def yaml_setter(self):
         """Return the yaml_setter."""
         return YamlConfigSetter(self.workload.paths.conf)
+
+    def load_node(self):
+        """Load the opensearch.yml config of the node."""
+        return self.yaml_setter.load(self.CONFIG_YML)
 
     def set_node(
         self,
@@ -303,3 +318,79 @@ class ConfigManager(BaseManager):
             f"-Xmx{str(heap_size_in_kb)}k",
             regex=True,
         )
+
+    def add_cm_addresses_to_conf(self):
+        """Add the new IP addresses of the current CM units."""
+        try:
+            # fetch nodes
+            nodes = self._nodes(
+                use_localhost=self.opensearch_client.is_node_up(), hosts=self.alt_hosts
+            )
+            # update (append) CM IPs
+            self.add_seed_hosts([node.ip for node in nodes if node.is_cm_eligible()])
+        except OpenSearchHttpError:
+            return
+
+    @cached_property
+    def current_node(self) -> Node:  # noqa: C901
+        """Return the current node.
+
+        First we try to get it from the OpenSearch API, if not available we build it
+        from the opensearch.yml config.
+        """
+        try:
+            node_id = self.opensearch_client.get_node_id(self.state.unit_name)
+            unit_id = self.state.server.unit_id
+            return self.opensearch_client.get_current_node(node_id, unit_id, self.alt_hosts)
+
+        except OpenSearchHttpError:
+            # we try to get the most accurate description of the node from the static config
+            conf = self.yaml_setter.load(self.CONFIG_YML)
+
+            # also, if possible we rely on the Deployment Description (databag)
+            deployment_desc = self.state.application.deployment_desc
+
+            # Application Priority: Deployment Description
+            # Reason: No reason to re-construct the App object
+            #  - it's available 99% of scenarios
+            #  - it's the same object as a re-constructed one (i.e. no dynamic changes on App)
+            if deployment_desc is None:
+                try:
+                    app = App(id=conf.get("node.attr.app_id"))
+                except ValidationError:
+                    raise OpenSearchError("Can not determine app details.")
+            else:
+                app = deployment_desc.app
+
+            # Roles (Temperature) Priority: local config
+            # Reason:
+            #  - Deployment Description is holding "expected state" (that may not be applied)
+            #  - Static config holds the currently applied settings
+            try:
+                roles = conf["node.roles"]
+            except KeyError:
+                if deployment_desc:
+                    if deployment_desc.start == StartMode.WITH_PROVIDED_ROLES:
+                        roles = deployment_desc.config.roles
+                    else:
+                        roles = GENERATED_ROLES
+                else:
+                    raise OpenSearchError("Can not determine roles.")
+
+            temperature = None
+            try:
+                temperature = conf["node.attr.temp"]
+            except KeyError:
+                if deployment_desc:
+                    temperature = deployment_desc.config.data_temperature
+
+            return Node(
+                # NOTE: We are NOT using self._charm.unit_name, as it refers to deployment_desc()
+                # that is not to be assumed to be always available at this point
+                name=self.state.unit_name,
+                roles=roles,
+                ip=self.state.host_ip,
+                app=app,
+                unit_id=self.state.server.unit_id,
+                temperature=temperature,
+            )

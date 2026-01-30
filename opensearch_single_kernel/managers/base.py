@@ -72,7 +72,7 @@ class BaseManager:
 
         return result
 
-    def nodes(
+    def _nodes(
         self,
         use_localhost: bool,
         hosts: list[str] | None = None,
