@@ -95,8 +95,8 @@ class OpenSearchEventsHandler(Object):
         )
 
         # --- OpenSearch Custom events ---
-        self.framework.observe(self.charm._start_opensearch_event, self._on_start_opensearch)
-        self.framework.observe(self.charm._restart_opensearch_event, self._on_restart_opensearch)
+        self.framework.observe(self.charm.start_opensearch_event, self._on_start_opensearch)
+        self.framework.observe(self.charm.restart_opensearch_event, self._on_restart_opensearch)
 
         # Ensure that only one instance of the `_on_peer_relation_changed` handler exists
         # in the deferred event queue

@@ -86,11 +86,44 @@
 # Require explicit names when deleting indices:
 #
 #action.destructive_requires_name: true
-node.attr.app_id: opensearch
+node.attr.app_id: 807d4916-e4a4-4417-ad85-97174ec8f320/opensearch
 node.attr.temp: hot
 node.roles:
-- data
-- ingest
-- ml
-- coordinating_only
 - cluster_manager
+- data
+plugins.security.ssl.http.clientauth_mode: OPTIONAL
+
+cluster.name: opensearch-dev
+
+node.name: opensearch-0.a5d
+
+network.host:
+- _site_
+- 10.10.10.10
+
+network.publish_host: 20.20.20.20
+
+http.publish_host: 30.30.30.30
+
+
+
+
+discovery.seed_providers: file
+
+path.data: /var/snap/opensearch/common/var/lib/opensearch
+
+path.logs: /var/snap/opensearch/common/var/log/opensearch
+
+plugins.security.disabled: false
+
+plugins.security.ssl.http.enabled: true
+
+plugins.security.ssl.transport.enforce_hostname_verification: true
+
+plugins.security.restapi.roles_enabled:
+- all_access
+- security_rest_api_access
+
+plugins.security.unsupported.restapi.allow_securityconfig_modification: true
+
+plugins.security.ssl_cert_reload_enabled: true

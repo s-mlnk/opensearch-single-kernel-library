@@ -971,6 +971,10 @@ def test_on_certificate_available_ca_rotation_second_stage_any_cluster_leader(
         "opensearch_single_kernel.lib.charms.tls_certificates_interface.v3.tls_certificates.TLSCertificatesRequiresV3.request_certificate_creation"
     )
     mocker.patch("opensearch_single_kernel.managers.tls.TlsManager.read_stored_ca")
+    mocker.patch("opensearch_single_kernel.managers.config.ConfigManager.current_node")
+    mocker.patch(
+        "opensearch_single_kernel.managers.exclusions.NodesExclusionsManager.delete_current"
+    )
     mocker.patch(
         "opensearch_single_kernel.managers.users.UsersManager.put_or_update_internal_user_leader"
     )
@@ -1133,6 +1137,10 @@ def test_on_certificate_available_ca_rotation_second_stage_any_cluster_non_leade
     )
     mocker.patch(
         "opensearch_single_kernel.managers.users.UsersManager.put_or_update_internal_user_leader"
+    )
+    mocker.patch("opensearch_single_kernel.managers.config.ConfigManager.current_node")
+    mocker.patch(
+        "opensearch_single_kernel.managers.exclusions.NodesExclusionsManager.delete_current"
     )
     mocker.patch("socket.socket.connect")
 
