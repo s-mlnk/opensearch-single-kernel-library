@@ -263,7 +263,10 @@ class OpenSearchEventsHandler(Object):
                     for node in self.charm.cluster_manager.get_nodes(
                         self.charm.cluster_manager.opensearch_client.is_node_up()
                     )
-                    if node.name != self.unit_name
+                    if node.name
+                    != format_unit_name(
+                        self.charm.unit.name, app=self.charm.state.application.deployment_desc.app
+                    )
                 ]
                 self.charm.cluster_manager.compute_and_broadcast_updated_topology(remaining_nodes)
             elif self.charm.app.planned_units() == 0:
