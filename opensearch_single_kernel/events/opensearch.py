@@ -44,7 +44,7 @@ from opensearch_single_kernel.common.exceptions import (
     OpenSearchUserMgmtError,
 )
 from opensearch_single_kernel.common.statuses import CharmStatuses
-from opensearch_single_kernel.core.models import DeploymentDescription, Node
+from opensearch_single_kernel.core.models import DeploymentDescription
 from opensearch_single_kernel.events.custom_events import (
     RestartOpenSearch,
     StartOpenSearch,
@@ -249,7 +249,7 @@ class OpenSearchEventsHandler(Object):
             nodes = self.charm.cluster_manager.get_nodes(True)
             if self.charm.cluster_manager.compute_and_broadcast_updated_topology(nodes):
                 # Nodes Config updated, we would need to reconfigure and restart
-                if self.charm.config_manager.reconfigure_unit():
+                if self.charm.config_manager.render_opensearch_config():
                     # Restart needed
                     self.charm.status.set(CharmStatuses.WAITING_TO_START)
                     logger.debug("Restarting opensearch due to reconfiguring node roles")

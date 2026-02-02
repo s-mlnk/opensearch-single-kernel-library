@@ -10,12 +10,11 @@ from typing import Any
 import yaml
 
 from opensearch_single_kernel.common.constants import CertType, Scope
-from opensearch_single_kernel.core.models import Node, OpenSearchProfile
+from opensearch_single_kernel.core.models import OpenSearchProfile
 from opensearch_single_kernel.core.state import ClusterState
 from opensearch_single_kernel.managers.cluster import ClusterManager
 from opensearch_single_kernel.utils.config import YamlConfigSetter
 from opensearch_single_kernel.utils.helpers import (
-    deployment_type,
     normalized_tls_subject,
 )
 from opensearch_single_kernel.workload.base import BaseWorkload
@@ -241,39 +240,6 @@ class ConfigManager:
             self.JVM_OPTIONS,
             "-Djdk.tls.client.protocols=TLSv1.2",
         )
-
-    def reconfigure_unit(self) -> bool:
-        """Reconfigure unit based on the nodes_config.
-
-        Returns if opensearch.yml on the unit was reconfigured, in which case a restart will
-        be required.
-        """
-        if not (nodes_config := self.state.application.get_object("nodes_config")):
-            return False
-
-        nodes_config = {name: Node.from_dict(node) for name, node in nodes_config.items()}
-
-        # update (append) CM IPs
-        self.add_seed_hosts(
-            [node.ip for node in list(nodes_config.values()) if node.is_cm_eligible()]
-        )
-
-        if not (new_node_conf := nodes_config.get(self.state.unit_name)):
-            # the conf could not be computed / broadcast, because this node is
-            # "starting" and is not online "yet" - either barely being configured (i.e. TLS)
-            # or waiting to start.
-            return False
-
-        current_conf = self.yaml_setter.load(self.CONFIG_YML)
-        stored_roles = current_conf["node.roles"] or ["coordinating"]
-        new_conf_roles = new_node_conf.roles or ["coordinating"]
-        if (
-            sorted(stored_roles) == sorted(new_conf_roles)
-            and current_conf.get("node.attr.temp") == new_node_conf.temperature
-        ):
-            # no conf change (roles for now)
-            return False
-        return True
 
     def add_seed_hosts(self, cm_ips: list[str]):
         """Add CM nodes ips / host names to the seed host list of this unit."""
