@@ -166,3 +166,15 @@ class NodesExclusionsManager(BaseManager):
         allocations_to_cleanup = list(state.allocation_exclusions_to_delete)
         if allocations_to_cleanup and self._delete_allocations(node, allocations_to_cleanup):
             state.update({"allocation-exclusions-to-delete": None})
+
+    def add_to_cleanup_list(self, unit_name: str, scope: Scope) -> None:
+        """Add Voting and alloc exclusions for a target unit.
+
+        This method is just a clean-up-later routine. We (re)add the unit to the exclusions and,
+        hence, the leader of this app will be aware of this unit's removal and log it into its
+        app-level peer data.
+        """
+        state = self.state.application if scope == Scope.APP else self.state.server
+        for lst in [state.allocation_exclusions_to_delete, state.voting_exclusions_to_delete]:
+            # Load the content of the list, avoiding '' entries
+            lst = lst.union({unit_name})

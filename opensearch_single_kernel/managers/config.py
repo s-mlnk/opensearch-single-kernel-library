@@ -392,6 +392,6 @@ class ConfigManager(BaseManager):
                 roles=roles,
                 ip=self.state.host_ip,
                 app=app,
-                unit_id=self.state.server.unit_id,
+                unit_number=self.state.server.unit_id,
                 temperature=temperature,
             )

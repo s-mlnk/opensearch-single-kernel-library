@@ -1,3 +1,5 @@
+---
+
 # This is the main OpenSearch Security configuration file where authentication
 # and authorization is defined.
 #
@@ -53,7 +55,7 @@
 
 
 _meta:
-  type: config
+  type: "config"
   config_version: 2
 
 config:
@@ -72,7 +74,7 @@ config:
       anonymous_auth_enabled: false
       xff:
         enabled: false
-        internalProxies: 192\.168\.0\.10|192\.168\.0\.11   # regex pattern
+        internalProxies: '192\.168\.0\.10|192\.168\.0\.11' # regex pattern
         #internalProxies: '.*' # trust all internal proxies, regex pattern
         #remoteIpHeader:  'x-forwarded-for'
         ###### see https://docs.oracle.com/javase/7/docs/api/java/util/regex/Pattern.html for regex help
@@ -95,7 +97,7 @@ config:
         authentication_backend:
           type: noop
       basic_internal_auth_domain:
-        description: Authenticate via HTTP Basic against internal users database
+        description: "Authenticate via HTTP Basic against internal users database"
         http_enabled: true
         transport_enabled: true
         order: 4
@@ -105,7 +107,7 @@ config:
         authentication_backend:
           type: intern
       proxy_auth_domain:
-        description: Authenticate via proxy
+        description: "Authenticate via proxy"
         http_enabled: false
         transport_enabled: false
         order: 3
@@ -113,12 +115,12 @@ config:
           type: proxy
           challenge: false
           config:
-            user_header: x-proxy-user
-            roles_header: x-proxy-roles
+            user_header: "x-proxy-user"
+            roles_header: "x-proxy-roles"
         authentication_backend:
           type: noop
       jwt_auth_domain:
-        description: Authenticate via Json Web Token
+        description: "Authenticate via Json Web Token"
         http_enabled: false
         transport_enabled: false
         order: 0
@@ -126,17 +128,17 @@ config:
           type: jwt
           challenge: false
           config:
-            signing_key: base64 encoded HMAC key or public RSA/ECDSA pem key
-            jwt_header: Authorization
-            jwt_url_parameter:
-            roles_key:
-            subject_key:
+            signing_key: "base64 encoded HMAC key or public RSA/ECDSA pem key"
+            jwt_header: "Authorization"
+            jwt_url_parameter: null
+            roles_key: null
+            subject_key: null
         authentication_backend:
           type: noop
       clientcert_auth_domain:
-        description: Authenticate via SSL client certificates
-        http_enabled: true
-        transport_enabled: true
+        description: "Authenticate via SSL client certificates"
+        http_enabled: false
+        transport_enabled: false
         order: 2
         http_authenticator:
           type: clientcert
@@ -146,7 +148,7 @@ config:
         authentication_backend:
           type: noop
       ldap:
-        description: Authenticate via LDAP or Active Directory
+        description: "Authenticate via LDAP or Active Directory"
         http_enabled: false
         transport_enabled: false
         order: 5
@@ -167,17 +169,17 @@ config:
             verify_hostnames: true
             hosts:
             - localhost:8389
-            bind_dn:
-            password:
-            userbase: ou=people,dc=example,dc=com
+            bind_dn: null
+            password: null
+            userbase: 'ou=people,dc=example,dc=com'
             # Filter to search for users (currently in the whole subtree beneath userbase)
             # {0} is substituted with the username
-            usersearch: (sAMAccountName={0})
+            usersearch: '(sAMAccountName={0})'
             # Use this attribute from the user as username (if not set then DN is used)
-            username_attribute:
+            username_attribute: null
     authz:
       roles_from_myldap:
-        description: Authorize via LDAP or Active Directory
+        description: "Authorize via LDAP or Active Directory"
         http_enabled: false
         transport_enabled: false
         authorization_backend:
@@ -194,16 +196,16 @@ config:
             verify_hostnames: true
             hosts:
             - localhost:8389
-            bind_dn:
-            password:
-            rolebase: ou=groups,dc=example,dc=com
+            bind_dn: null
+            password: null
+            rolebase: 'ou=groups,dc=example,dc=com'
             # Filter to search for roles (currently in the whole subtree beneath rolebase)
             # {0} is substituted with the DN of the user
             # {1} is substituted with the username
             # {2} is substituted with an attribute value from user's directory entry, of the authenticated user. Use userroleattribute to specify the name of the attribute
-            rolesearch: (member={0})
+            rolesearch: '(member={0})'
             # Specify the name of the attribute which value should be substituted with {2} above
-            userroleattribute:
+            userroleattribute: null
             # Roles as an attribute of the user entry
             userrolename: disabled
             #userrolename: memberOf
@@ -212,16 +214,16 @@ config:
             rolename: cn
             # Resolve nested roles transitive (roles which are members of other roles and so on ...)
             resolve_nested_roles: true
-            userbase: ou=people,dc=example,dc=com
+            userbase: 'ou=people,dc=example,dc=com'
             # Filter to search for users (currently in the whole subtree beneath userbase)
             # {0} is substituted with the username
-            usersearch: (uid={0})
+            usersearch: '(uid={0})'
             # Skip users matching a user name, a wildcard or a regex pattern
             #skip_users:
             #  - 'cn=Michael Jackson,ou*people,o=TEST'
             #  - '/\S*/'
       roles_from_another_ldap:
-        description: Authorize via another Active Directory
+        description: "Authorize via another Active Directory"
         http_enabled: false
         transport_enabled: false
         authorization_backend:

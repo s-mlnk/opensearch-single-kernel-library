@@ -22,12 +22,14 @@ from ops import (
     RelationJoinedEvent,
     SecretChangedEvent,
     StartEvent,
+    StorageDetachingEvent,
     UpdateStatusEvent,
 )
 
 from opensearch_single_kernel.common.constants import (
     COS_USER,
     NODE_LOCK_RELATION,
+    OPENSEARCH_STORAGE_NAME,
     OPENSEARCH_SYSTEM_USERS,
     PEER_RELATION,
     CertType,
@@ -40,6 +42,7 @@ from opensearch_single_kernel.common.constants import (
 )
 from opensearch_single_kernel.common.exceptions import (
     OpenSearchCmdError,
+    OpenSearchHAError,
     OpenSearchHttpError,
     OpenSearchInstallError,
     OpenSearchMissingError,
@@ -92,6 +95,11 @@ class OpenSearchEventsHandler(Object):
         )
         self.framework.observe(
             self.charm.on[PEER_RELATION].relation_departed, self._on_peer_relation_departed
+        )
+
+        self.framework.observe(
+            self.charm.on[OPENSEARCH_STORAGE_NAME].storage_detaching,
+            self._on_opensearch_data_storage_detaching,
         )
 
         # --- OpenSearch Custom events ---
@@ -228,10 +236,73 @@ class OpenSearchEventsHandler(Object):
                 f"Waiting for units to leave: expecting {self.app.planned_units()}, currently {n_units}. Deferring event."
             )
             event.defer()
-        # TODO: Handle exclusions
-        # self.opensearch_exclusions.add_to_cleanup_list(
-        # unit_name=format_unit_name(event.departing_unit.name, deployment_desc.app)
-        # )
+        self.charm.exclusions_manager.add_to_cleanup_list(
+            unit_name=format_unit_name(event.departing_unit.name, deployment_desc.app),
+            scope=Scope.APP if self.charm.unit.is_leader() else Scope.UNIT,
+        )
+
+    def _on_opensearch_data_storage_detaching(self, event: StorageDetachingEvent):  # noqa: C901
+        """Triggered when removing unit, Prior to the storage being detached."""
+        # TODO: Warning in case of upgrade in progress
+
+        # acquire lock to ensure only 1 unit removed at a time
+        # Closes canonical/opensearch-operator#378
+        if self.charm.app.planned_units() > 1 and not self.charm.lock_manager.acquired:
+            # Raise uncaught exception to prevent Juju from removing unit
+            raise Exception("Unable to acquire lock: Another unit is starting or stopping.")
+
+        # if the leader is departing, and this hook fails "leader elected" won"t trigger,
+        # so we want to re-balance the node roles from here
+        if self.charm.unit.is_leader():
+            if self.charm.app.planned_units() <= 1 and (
+                self.charm.cluster_manager.opensearch_client.is_node_up()
+                or self.charm.cluster_manager.alt_hosts
+            ):
+                remaining_nodes = [
+                    node
+                    for node in self.charm.cluster_manager.get_nodes(
+                        self.charm.cluster_manager.opensearch_client.is_node_up()
+                    )
+                    if node.name != self.unit_name
+                ]
+                self.charm.cluster_manager.compute_and_broadcast_updated_topology(remaining_nodes)
+            elif self.charm.app.planned_units() == 0:
+                # This is the last unit being removed
+                # We want to clean things up in case of a cold start later
+                self.charm.cluster_manager.cleanup_on_last_unit_removal()
+
+            # No cluster managers left in the cluster fleet
+            # raise so we do not lose the cluster state
+            # TODO:
+
+            # we attempt to flush the translog to disk
+            self.charm.cluster_manager.flush_translog_to_disk()
+
+            try:
+                self.stop_opensearch()
+                if self.charm.cluster_manager.alt_hosts:
+                    # There is enough peers available for us to try removing the unit
+                    current_node = self.charm.config_manager.current_node
+                    scope = Scope.APP if self.charm.unit.is_leader() else Scope.UNIT
+                    self.charm.exclusions_manager.delete_current(current_node, scope)
+                # safeguards in case planned_units > 0
+                if self.charm.app.planned_units() > 0:
+                    # check cluster status
+                    if self.charm.cluster_manager.alt_hosts:
+                        health_color = self.charm.status.apply_health(
+                            wait_for_green_first=True, use_localhost=False, unit=False
+                        )
+                        if health_color == HealthColors.RED:
+                            raise OpenSearchHAError(CharmStatuses.CLUSTER_HEALTH_RED.value.message)
+                    else:
+                        raise OpenSearchHAError(CharmStatuses.CLUSTER_HEALTH_UNKNOWN.value.message)
+            finally:
+                if self.charm.app.planned_units() > 1 and (
+                    self.charm.cluster_manager.opensearch_client.is_node_up()
+                    or self.charm.cluster_manager.alt_hosts
+                ):
+                    # release lock
+                    self.charm.lock_manager.release()
 
     def _on_update_status(self, event: UpdateStatusEvent):  # noqa: C901
         """On update status event.

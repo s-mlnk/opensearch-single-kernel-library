@@ -138,6 +138,9 @@ GENERATED_ROLES = ["data", "ingest", "ml", "cluster_manager"]
 # OpenSearch default port
 OPENSEARCH_HTTP_PORT = 9200
 
+# OpenSearch storage name
+OPENSEARCH_STORAGE_NAME = "opensearch-data"
+
 
 # Relations
 PEER_RELATION = "opensearch-peers"

@@ -166,7 +166,7 @@ class OpenSearchClient:
             roles=current_node["roles"],
             ip=current_node["ip"],
             app=App(id=current_node["attributes"]["app_id"]),
-            unit_id=unit_id,
+            unit_number=unit_id,
             temperature=current_node.get("attributes", {}).get("temp"),
         )
 

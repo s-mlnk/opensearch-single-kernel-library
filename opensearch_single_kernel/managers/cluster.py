@@ -580,6 +580,35 @@ class ClusterManager(BaseManager):
         )
         return nodes_by_name
 
+    def cleanup_on_last_unit_removal(self):
+        """Clean up cluster state on last unit removal."""
+        if self.state.peer_relation:
+            self.state.application.update({"bootstrap_contributors_count": None})
+            self.state.application.update({"nodes_config": None})
+            # we delete the security index initialised and bootstrapped flags
+            # if there are no data units left in all cluster
+            if not self.state.application.is_data_role_in_cluster_fleet_apps(self):
+                self.state.application.update({"is_security_index_initialised": None})
+                self.state.application.update({"bootstrapped": None})
+        # TODO: Large Deployment
+        # if self.opensearch_peer_cm.is_provider():
+        #    self.peer_cluster_provider.refresh_relation_data(event, can_defer=False)
+        #    logger.debug("demoting main orchestrator")
+        #    self.opensearch_peer_cm.demote_deployment_type()
+        #    self.peers_data.delete(Scope.APP, "orchestrators")
+        #    self.peer_cluster_provider.clean_all_relation_data()
+        # elif self.opensearch_peer_cm.is_consumer():
+        #    self.peer_cluster_requirer.refresh_requirer_relation_data()
+
+    def flush_translog_to_disk(self):
+        """Flush OpenSearch translog to disk."""
+        if self.opensearch_client.is_node_up():
+            try:
+                self.opensearch_client.request("POST", "/_flush")
+            except OpenSearchHttpError:
+                # if it's a failed attempt we move on
+                pass
+
     @property
     def needs_start_after_host_reboot(self) -> bool:
         """Start Process Edge Case.
