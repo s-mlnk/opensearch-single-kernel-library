@@ -123,7 +123,7 @@ class OpenSearchEventsHandler(Object):
     def _on_peer_relation_changed(self, event: RelationChangedEvent):  # noqa C901
         """Handle peer relation changes."""
         if self.charm.cluster_manager.opensearch_client.is_node_up():
-            health = self.charm.status.apply_health(unit=self.charm.unit.is_leader())
+            health = self.charm.status.apply_health(app=self.charm.unit.is_leader())
             if self._is_peer_rel_changed_deferred:
                 # We already deferred this event during this Juju event. Retry on the next
                 # Juju event.
@@ -173,12 +173,13 @@ class OpenSearchEventsHandler(Object):
 
         if not (unit_data := event.relation.data.get(event.unit)):
             return
-        # TODO: Handle exclusions
-        current_node = self.charm.config_manager.current_node
-        self.charm.exclusions_manager.cleanup(
-            Scope.APP if self.charm.unit.is_leader() else Scope.UNIT,
-            current_node,
-        )
+
+        if self.charm.state.application.deployment_desc:
+            current_node = self.charm.config_manager.current_node
+            self.charm.exclusions_manager.cleanup(
+                Scope.APP if self.charm.unit.is_leader() else Scope.UNIT,
+                current_node,
+            )
 
         if self.charm.unit.is_leader() and unit_data.get("bootstrap_contributor"):
             contributor_count = self.charm.state.application.bootstrap_contributors_count
@@ -339,17 +340,20 @@ class OpenSearchEventsHandler(Object):
             self.charm.tls_events.on_unit_ip_changed(event)
 
         if self.charm.unit.is_leader():
-            self.charm.cluster_manager.reconcile_cluster_config()
-            if (
-                self.charm.state.application.deployment_desc.start
-                == StartMode.WITH_GENERATED_ROLES
-            ):
-                # trigger roles change on the leader, other units will have their peer-rel-changed
-                # event triggered
-                self.trigger_peer_rel_changed(on_other_units=False, on_current_unit=True)
-            self.apply_status_from_deployment_desc(self.charm.state.application.deployment_desc)
+            if self.charm.cluster_manager.reconcile_cluster_config():
+                if (
+                    self.charm.state.application.deployment_desc.start
+                    == StartMode.WITH_GENERATED_ROLES
+                ):
+                    # trigger roles change on the leader, other units will have their
+                    # peer-rel-changed event triggered
+                    self.trigger_peer_rel_changed(on_other_units=False, on_current_unit=True)
+                self.apply_status_from_deployment_desc(
+                    self.charm.state.application.deployment_desc
+                )
 
-        # TODO: Handle cluster change to main orchestrator
+            # TODO: Handle cluster change to main orchestrator
+            # This case is when the user change roles on runtime of init_hold / roles.
         if not self.charm.state.application.deployment_desc:
             logger.debug("Deployment description not yet computed, deferring event.")
             event.defer()
@@ -380,7 +384,6 @@ class OpenSearchEventsHandler(Object):
                 "Restarting opensearch due to config change: profile_restart_needed=%s",
                 profile_restart_needed,
             )
-            logger.debug("boutou======> We are restarting opensearch due to config changed")
             self.charm._restart_opensearch_event.emit()
 
     def _on_leader_elected(self, event: LeaderElectedEvent) -> None:  # noqa: C901
@@ -414,9 +417,6 @@ class OpenSearchEventsHandler(Object):
                     # Restart needed
                     self.charm.status.set(CharmStatuses.WAITING_TO_START)
                     logger.debug("Restarting opensearch due to reconfiguring node roles")
-                    logger.debug(
-                        "boutou======> We are restarting opensearch due to leader elected"
-                    )
                     self.charm._restart_opensearch_event.emit()
 
             return

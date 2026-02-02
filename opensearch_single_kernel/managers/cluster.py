@@ -87,8 +87,11 @@ class ClusterManager(BaseManager):
             logger.debug(f"waited {datetime.now() - start} opensearch did not start")
             raise OpenSearchStartTimeoutError()
 
-    def reconcile_cluster_config(self) -> None:
-        """Init, or updates / recomputes current peer cluster related config if applies."""
+    def reconcile_cluster_config(self) -> bool:
+        """Init, or updates / recomputes current peer cluster related config if applies.
+
+        Returns whether the deployment description has changed (Not the first time setup).
+        """
         logger.debug("Running peer cluster manager reconcile function")
         user_config = self._user_config()
         if not (current_deployment_desc := self.state.application.deployment_desc):
@@ -96,19 +99,20 @@ class ClusterManager(BaseManager):
             deployment_desc = self._new_cluster_setup(user_config)
             logger.debug("New deployment_desc from new cluster setup: %s", deployment_desc)
             self.state.application.put_object("deployment-description", deployment_desc.to_dict())
-            return
+            return False
         # update cluster deployment desc
         logger.debug("Existing deployment_desc before cluster setup: %s", current_deployment_desc)
         deployment_desc = self._existing_cluster_setup(user_config, current_deployment_desc)
         logger.debug("Existing deployment_desc after cluster setup: %s", deployment_desc)
         if current_deployment_desc == deployment_desc:
-            return
+            return False
 
         # TODO: Should we add an entry on DeploymentDesc "errors" to reflect on status?
         self.state.application.put_object("deployment-description", deployment_desc.to_dict())
 
         # TODO: once peer clusters relation implemented, we should apply all directives
         #  + removing them from queue. We currently only apply the status.
+        return True
 
     def recompute_roles_if_needed(self):
         """Recompute node roles:self-healing that didn't trigger leader related event occurred."""
