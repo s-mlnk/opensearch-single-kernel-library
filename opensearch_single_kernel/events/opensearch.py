@@ -384,7 +384,7 @@ class OpenSearchEventsHandler(Object):
                 "Restarting opensearch due to config change: profile_restart_needed=%s",
                 profile_restart_needed,
             )
-            self.charm._restart_opensearch_event.emit()
+            self.charm.restart_opensearch_event.emit()
 
     def _on_leader_elected(self, event: LeaderElectedEvent) -> None:  # noqa: C901
         """Handle leader election event."""
@@ -417,7 +417,7 @@ class OpenSearchEventsHandler(Object):
                     # Restart needed
                     self.charm.status.set(CharmStatuses.WAITING_TO_START)
                     logger.debug("Restarting opensearch due to reconfiguring node roles")
-                    self.charm._restart_opensearch_event.emit()
+                    self.charm.restart_opensearch_event.emit()
 
             return
 
@@ -559,7 +559,7 @@ class OpenSearchEventsHandler(Object):
 
         logger.info("Emitting the start opensearch event")
 
-        self.charm._start_opensearch_event.emit()
+        self.charm.start_opensearch_event.emit()
 
     def _on_start_opensearch(self, event: StartOpenSearch) -> None:  # noqa: C901
         """Start OpenSearch, with a generated or passed conf, if all resources configured."""
@@ -747,7 +747,7 @@ class OpenSearchEventsHandler(Object):
         # TODO: Handle event.after_upgrade
         # TODO: Handle refresh relation data of peer cluster
 
-        self.charm.tls_events.configure_tls_after_start()
+        self.configure_tls_after_start()
 
     def _on_restart_opensearch(self, event: RestartOpenSearch) -> None:
         """Event handler for restart opensearch event."""
@@ -783,7 +783,7 @@ class OpenSearchEventsHandler(Object):
             == 1
         )
         logger.debug("Restarting OpenSearch with ignore_lock=%s", ignore_lock)
-        self.charm._start_opensearch_event.emit(ignore_lock=ignore_lock)
+        self.charm.start_opensearch_event.emit(ignore_lock=ignore_lock)
 
     def stop_opensearch(self, *, restart: bool = False) -> None:
         """Stop OpenSearch service."""
@@ -998,3 +998,89 @@ class OpenSearchEventsHandler(Object):
 
         if on_current_unit:
             self.charm.on[PEER_RELATION].relation_changed.emit(self.charm.state.peer_relation)
+
+    def configure_tls_after_start(self):
+        """Configure TLS state and certificates after OpenSearch is started."""
+        # update the peer relation data for TLS CA rotation routine
+        self.charm.state.reset_ca_rotation_state()
+        if self.charm.state.is_tls_full_configured_in_cluster:
+            self.charm.status.clear(CharmStatuses.TLS_CA_ROTATION)
+            self.charm.status.clear(CharmStatuses.TLS_NOT_FULLY_CONFIGURED)
+
+        # request new certificates after rotating the CA
+        if self.charm.state.server.tls_ca_renewing and self.charm.state.server.tls_ca_renewed:
+            self.charm.status.set(CharmStatuses.TLS_NOT_FULLY_CONFIGURED)
+            self.request_new_unit_certificates()
+            if self.charm.unit.is_leader():
+                self.request_new_admin_certificate()
+            else:
+                self.charm.tls_manager.store_admin_tls_secrets_if_applies()
+
+        # If the reload through API failed, we restart the service
+        # We remove the old CA and update the chain to only include the new one
+        # if all certs are stored and CA rotation is complete in the cluster
+        if (
+            self.charm.tls_manager.read_stored_ca(self.charm.tls_manager.OLD_CA_ALIAS)
+            and self.charm.state.ca_and_certs_rotation_complete_in_cluster()
+        ):
+            logger.info("post_start_init: Detected CA rotation complete in cluster")
+            self.charm.tls_manager.finalize_ca_certs_rotation()
+
+        # TODO: Handle case of peer cluster manager
+        # if self.peers_data.get(Scope.UNIT, "cluster_manager_removed", default=False):
+        # restore cluster_manager role and restart the service
+        # logger.debug("Restoring cluster_manager role and restarting the service")
+        # self.peers_data.delete(Scope.UNIT, "cluster_manager_removed")
+        # self._restart_opensearch_event.emit()
+
+    def request_new_unit_certificates(self) -> None:
+        """Requests a new certificate with the given scope and type from the tls operator."""
+        self.charm.state.server.update({"tls_configured": None})
+        # TODO: Update peer cluster relation
+        # self.charm.tls.update_tls_flag_to_peer_cluster_relation("tls_configured", "remove")
+
+        for cert_type in [CertType.UNIT_HTTP, CertType.UNIT_TRANSPORT]:
+            csr = self.charm.state.secrets.get_object(Scope.UNIT, cert_type.val, peek=True)[
+                "csr"
+            ].encode("utf-8")
+            self.charm.tls_events.certs.request_certificate_revocation(csr)
+
+        # doing this sequentially (revoking -> requesting new ones), to avoid triggering
+        # the "certificate available" callback with old certificates
+        for cert_type in [CertType.UNIT_HTTP, CertType.UNIT_TRANSPORT]:
+            secrets = self.charm.state.secrets.get_object(Scope.UNIT, cert_type.val, peek=True)
+            key = secrets["key"].encode("utf-8")
+            key_password = secrets.get("key-password", None)
+            old_csr = secrets["csr"].encode("utf-8")
+            csr = self.charm.tls_manager.create_certificate_signing_request(
+                scope=Scope.UNIT,
+                cert_type=cert_type,
+                key=key,
+                password=key_password,
+                tls_file=False,
+            )
+
+            self.charm.tls_events.certs.request_certificate_renewal(
+                old_certificate_signing_request=old_csr,
+                new_certificate_signing_request=csr,
+            )
+
+    def request_new_admin_certificate(self) -> None:
+        """Request the generation of a new admin certificate."""
+        if not self.charm.unit.is_leader():
+            return
+        admin_secrets = (
+            self.charm.state.secrets.get_object(Scope.APP, CertType.APP_ADMIN.val, peek=True) or {}
+        )
+
+        key = admin_secrets["key"].encode("utf-8")
+        key_password = admin_secrets.get("key-password", None)
+        csr = self.charm.tls_manager.create_certificate_signing_request(
+            scope=Scope.APP,
+            cert_type=CertType.APP_ADMIN,
+            key=key,
+            password=key_password,
+            tls_file=False,
+        )
+
+        self.charm.tls_events.certs.request_certificate_creation(certificate_signing_request=csr)

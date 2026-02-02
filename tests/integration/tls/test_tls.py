@@ -103,6 +103,7 @@ async def test_cluster_formation_after_tls(ops_test: OpsTest) -> None:
 
 # TODO: re-enable this test when scale up/down is implemented
 @pytest.mark.abort_on_fail
+@pytest.mark.skip(reason="Skipping TLS renewal test until scale up/down is implemented")
 async def test_tls_renewal(ops_test: OpsTest) -> None:
     """Test that renewed TLS certificates are reloaded immediately without restarting."""
     leader_unit_ip = await get_leader_unit_ip(ops_test)

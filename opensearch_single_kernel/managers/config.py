@@ -7,6 +7,7 @@
 import logging
 from collections import namedtuple
 from functools import cached_property
+from typing import Any
 
 from pydantic import ValidationError
 
@@ -236,7 +237,7 @@ class ConfigManager(BaseManager):
             lines = "\n".join([entry for entry in cm_ips_set if entry.strip()])
             self.workload.paths.seed_hosts.write_text(f"{lines}\n")
 
-    def set_admin_tls_conf(self, secrets: dict[str, any]):
+    def set_admin_tls_conf(self, secrets: dict[str, Any]):
         """Configures the admin certificate."""
         self.yaml_setter.put(
             self.CONFIG_YML,

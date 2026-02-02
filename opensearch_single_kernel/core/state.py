@@ -15,6 +15,7 @@ from ops import Application, JujuVersion, Object, Relation, Unit
 from opensearch_single_kernel.common.constants import (
     GENERATED_ROLES,
     NODE_LOCK_RELATION,
+    OPENSEARCH_HTTP_PORT,
     PEER_CLUSTER_ORCHESTRATOR_RELATION,
     PEER_CLUSTER_RELATION,
     PEER_RELATION,
@@ -49,8 +50,6 @@ from opensearch_single_kernel.utils.helpers import format_unit_name
 
 if TYPE_CHECKING:
     from opensearch_single_kernel.charms.base import OpenSearchBaseCharm
-
-logger = logging.getLogger(__name__)
 
 
 logger = logging.getLogger(__name__)
@@ -400,7 +399,7 @@ class ClusterState(Object):
     def peer_cluster_orchestrator(self) -> PeerCluster:
         """The State for the requirer side of the 'peer-cluster-orchestrator' relation.."""
         return PeerCluster(
-            relation=self.peer_cluster_relation,
+            relation=self.peer_cluster_orchestrator_relation,
             data_interface=PeerClusterData(self.model, PEER_CLUSTER_RELATION),
             component=self.model.app,
         )
@@ -409,7 +408,7 @@ class ClusterState(Object):
     def peer_cluster(self) -> PeerCluster:
         """State for the provider side of the 'peer-cluster-orchestrator' relation."""
         return PeerCluster(
-            relation=self.peer_cluster_orchestrator_relation,
+            relation=self.peer_cluster_relation,
             data_interface=PeerClusterOrchestratorData(
                 self.model, PEER_CLUSTER_ORCHESTRATOR_RELATION
             ),
@@ -426,6 +425,18 @@ class ClusterState(Object):
             data_interface=self.peer_unit_interface,
             component=self.model.unit,
         )
+
+    @property
+    def servers(self) -> list[OpenSearchServer]:
+        """Return all opensearch servers using peer relation."""
+        return [
+            OpenSearchServer(
+                relation=self.peer_relation,
+                data_interface=self.peer_unit_interface,
+                component=unit,
+            )
+            for unit in self.all_units
+        ]
 
     @property
     def application(self) -> OpenSearchApplication:
@@ -462,7 +473,7 @@ class ClusterState(Object):
     @property
     def port(self) -> int:
         """Return Port of OpenSearch unit."""
-        return 9200
+        return OPENSEARCH_HTTP_PORT
 
     def unit_ip(self, unit: Unit) -> str | None:
         """Returns the ip address of a given unit."""
@@ -499,40 +510,13 @@ class ClusterState(Object):
         rotation_happening = False
         rotation_complete = True
 
-        # check current unit
-        logger.debug(
-            "current unit tls_ca_renewing:%s | tls_ca_renewed:%s",
-            self.server.tls_ca_renewing,
-            self.server.tls_ca_renewed,
-        )
-        if self.server.tls_ca_renewing:
+        # check peer units and current unit
+        if any([server.tls_ca_renewing for server in self.servers]):
             rotation_happening = True
-        if not self.server.tls_ca_renewed:
-            logger.debug(
-                f"TLS CA rotation ongoing in unit: {self.model.unit.name}, will not update tls certificates."
-            )
+        if not all([server.tls_ca_renewed for server in self.servers]):
             rotation_complete = False
-        # TODO: Support peer cluster and peer cluster orchestrator
-        for relation_type in [
-            PEER_RELATION,
-            # PeerClusterRelationName,
-            # PeerClusterOrchestratorRelationName,
-        ]:
-            for relation in self.model.relations[relation_type]:
-                for unit in relation.units:
-                    logger.debug(
-                        f"Checking unit {unit} in relation {relation}: \
-                            tls_ca_renewing: {relation.data[unit].get('tls_ca_renewing')} \
-                            | tls_ca_renewed: {relation.data[unit].get('tls_ca_renewed')}"
-                    )
-                    if relation.data[unit].get("tls_ca_renewing"):
-                        rotation_happening = True
 
-                    if not relation.data[unit].get("tls_ca_renewed"):
-                        logger.debug(
-                            f"TLS CA rotation ongoing in unit {unit}, will not update tls certificates."
-                        )
-                        rotation_complete = False
+        # TODO: Support peer cluster and peer cluster orchestrator
         logger.debug(
             "CA rotation happening in cluster: %s | \
                 rotation complete in cluster: %s | return value: %s \
@@ -550,33 +534,12 @@ class ClusterState(Object):
 
         # the current unit is not in the relation.units list
         # if tls is not configured or in the middle of rotation, return False
-        if not self.server.tls_configured or (
-            self.server.tls_ca_renewing and not self.server.tls_ca_renewed
+        if not all([server.tls_configured for server in self.servers]) or all(
+            [server.tls_ca_renewing and not server.tls_ca_renewed for server in self.servers]
         ):
-            logger.debug("TLS CA and/or Cert rotation ongoing on this unit.")
             return False
 
-        for relation_type in [
-            PEER_RELATION
-            # PeerClusterRelationName,
-            # PeerClusterOrchestratorRelationName,
-        ]:
-            for relation in self.model.relations[relation_type]:
-                logger.debug(f"Checking relation {relation}: units: {relation.units}")
-                for unit in relation.units:
-
-                    if relation.data[unit].get("tls_configured") != "True" or (
-                        relation.data[unit].get("tls_ca_renewing", False)
-                        and not relation.data[unit].get("tls_ca_renewed", False)
-                    ):
-                        logger.debug(
-                            f"TLS CA and or Cert rotation not complete for unit {unit}: {relation} \
-                                | tls_ca_renewing: {relation.data[unit].get('tls_ca_renewing')} \
-                                | tls_ca_renewed: {relation.data[unit].get('tls_ca_renewed')} \
-                                | tls_configured: {relation.data[unit].get('tls_configured')}"
-                        )
-                        rotation_complete = False
-                        break
+        # TODO: Support peer cluster and peer cluster orchestrator
         return rotation_complete
 
     def reset_ca_rotation_state(self) -> None:

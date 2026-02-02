@@ -188,7 +188,7 @@ def test_on_relation_created_only_main_orchestrator_requests_application_cert(ha
     harness.set_leader(is_leader=True)
     harness.charm.tls_events._on_tls_relation_created(event_mock)
 
-    create_certificate_signing_request.mock_calls == [
+    assert create_certificate_signing_request.mock_calls == [
         mock.call(Scope.UNIT, CertType.UNIT_TRANSPORT),
         mock.call(Scope.UNIT, CertType.UNIT_HTTP),
     ]
@@ -231,7 +231,7 @@ def test_on_relation_created_non_admin(harness, mocker):
 
     harness.set_leader(is_leader=False)
     harness.charm.tls_events._on_tls_relation_created(event_mock)
-    create_certificate_signing_request == [
+    assert create_certificate_signing_request.mock_calls == [
         mock.call(Scope.UNIT, CertType.UNIT_TRANSPORT),
         mock.call(Scope.UNIT, CertType.UNIT_HTTP),
     ]
@@ -501,7 +501,7 @@ def test_on_certificate_available_leader_app_cert_full_workflow(
 
     original_status_app = harness.model.app.status
     original_status_unit = harness.model.unit.status
-    harness.charm._restart_opensearch_event = MagicMock()
+    harness.charm.restart_opensearch_event = MagicMock()
 
     harness.charm.tls_events._on_certificate_available(event_mock)
 
@@ -651,7 +651,7 @@ def test_on_certificate_available_any_node_unit_cert_full_workflow(
     harness.set_leader(is_leader=leader)
 
     original_status_unit = harness.model.unit.status
-    harness.charm._restart_opensearch_event = MagicMock()
+    harness.charm.restart_opensearch_event = MagicMock()
 
     harness.charm.tls_events._on_certificate_available(event_mock)
 
@@ -789,7 +789,7 @@ def test_on_certificate_available_ca_rotation_first_stage_any_cluster_leader(
         state=DeploymentState(value=State.ACTIVE),
     )
 
-    harness.charm._restart_opensearch_event = MagicMock()
+    harness.charm.restart_opensearch_event = MagicMock()
 
     harness.set_leader(is_leader=True)
     original_status = harness.model.unit.status
@@ -822,7 +822,7 @@ def test_on_certificate_available_ca_rotation_first_stage_any_cluster_leader(
     assert isinstance(harness.model.unit.status, MaintenanceStatus)
     assert harness.model.unit.status.message == CharmStatuses.TLS_CA_ROTATION.value.message
     assert harness.model.unit.status, MaintenanceStatus != original_status
-    harness.charm._restart_opensearch_event.emit.assert_called_once()
+    harness.charm.restart_opensearch_event.emit.assert_called_once()
 
     # The new certificate is now replacing the old one in Peer Relation secrets
     # NOTE: INCONSISTENCY: The new cert and chain ARE saved into the secret
@@ -907,14 +907,14 @@ def test_on_certificate_available_ca_rotation_first_stage_any_cluster_non_leader
 
     harness.set_leader(is_leader=False)
     original_status = harness.model.unit.status
-    harness.charm._restart_opensearch_event = MagicMock()
+    harness.charm.restart_opensearch_event = MagicMock()
 
     harness.charm.tls_events._on_certificate_available(event_mock)
 
     # No action taken, no change on status or certificates
     assert run_cmd.call_count == 0
     assert harness.model.unit.status == original_status
-    harness.charm._restart_opensearch_event.emit.assert_not_called()
+    harness.charm.restart_opensearch_event.emit.assert_not_called()
     assert harness.charm.state.secrets.get_object(Scope.APP, CertType.APP_ADMIN.val) == {
         "csr": csr,
         "keystore-password": "keystore_12345",
@@ -1312,7 +1312,7 @@ def test_on_certificate_available_ca_rotation_third_stage_leader_cert_app(
         state=DeploymentState(value=State.ACTIVE),
     )
 
-    harness.charm._restart_opensearch_event = MagicMock()
+    harness.charm.restart_opensearch_event = MagicMock()
     harness.model.unit.status = MaintenanceStatus()
     original_status = harness.model.unit.status
 
@@ -1417,11 +1417,9 @@ def test_on_certificate_available_ca_rotation_third_stage_any_unit_cert_unit(
     remove_ca_from_request_bundle = mocker.patch(
         "opensearch_single_kernel.managers.tls.TlsManager._remove_ca_from_request_bundle"
     )
+    mocker.patch("opensearch_single_kernel.managers.tls.TlsManager.update_request_ca_bundle")
     tempfile = mocker.patch(
         f"opensearch_single_kernel.workload.{substrate}.{substrate.upper()}Workload.temp_file"
-    )
-    mocker.patch(
-        f"opensearch_single_kernel.workload.{substrate}.{substrate.upper()}Workload.write_file"
     )
     run_cmd = mocker.patch(
         f"opensearch_single_kernel.workload.{substrate}.{substrate.upper()}Workload.run_cmd"
@@ -1489,7 +1487,7 @@ def test_on_certificate_available_ca_rotation_third_stage_any_unit_cert_unit(
         state=DeploymentState(value=State.ACTIVE),
     )
 
-    harness.charm._restart_opensearch_event = MagicMock()
+    harness.charm.restart_opensearch_event = MagicMock()
     harness.model.unit.status = MaintenanceStatus()
 
     with harness.hooks_disabled():

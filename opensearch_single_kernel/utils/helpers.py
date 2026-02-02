@@ -115,14 +115,14 @@ def split_ca_chain(pem_content: str) -> list[str]:
     return [f"{part}\n{end_cert_marker}" for part in parts]
 
 
-def normalized_tls_subject(subject: string) -> str:
+def normalized_tls_subject(subject: str) -> str:
     """Removes any / character from a subject."""
     if subject.startswith("/"):
         subject = subject[1:]
     return subject.replace("/", ",")
 
 
-def cert_expiration_remaining_hours(cert: string) -> int:
+def cert_expiration_remaining_hours(cert: str) -> int:
     """Returns the remaining hours for the cert to expire."""
     certificate_object = x509.load_pem_x509_certificate(data=cert.encode())
     time_difference = certificate_object.not_valid_after - datetime.utcnow()

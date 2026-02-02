@@ -135,6 +135,10 @@ COS_ROLE = "readall_and_monitor"
 GENERATED_ROLES = ["data", "ingest", "ml", "cluster_manager"]
 
 
+# OpenSearch default port
+OPENSEARCH_HTTP_PORT = 9200
+
+
 # Relations
 PEER_RELATION = "opensearch-peers"
 TLS_RELATION = "certificates"

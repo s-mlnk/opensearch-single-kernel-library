@@ -116,13 +116,16 @@ jobs:
         run: |
           sudo lxc image copy ubuntu:568f69ff1166 local:
           sudo lxc image alias create "juju/ubuntu@22.04/amd64" 568f69ff1166
-      - name: Install pipx (Temporary workaround)
-        run: sudo apt-get install -y pipx
+      - name: Configure sysctl
+        run: |
+          sudo tee -a /etc/sysctl.conf > /dev/null <<EOT
+          vm.max_map_count=262144
+          vm.swappiness=0
+          net.ipv4.tcp_retries2=5
+          fs.file-max=1048576
+          EOT
 
-      - name: Setup tmate session
-        uses: canonical/action-tmate@main
-        with:
-          detached: true
+          sudo sysctl -p
       - name: Run spread job
         timeout-minutes: 180
         id: spread

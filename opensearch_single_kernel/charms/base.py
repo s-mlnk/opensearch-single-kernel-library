@@ -33,8 +33,8 @@ from opensearch_single_kernel.workload.base import BaseWorkload
 class OpenSearchBaseCharm(ops.CharmBase, ABC):
     """Base OpenSearch Charm, this will include base structure for both machine and k8s charms."""
 
-    _restart_opensearch_event = EventSource(RestartOpenSearch)
-    _start_opensearch_event = EventSource(StartOpenSearch)
+    restart_opensearch_event = EventSource(RestartOpenSearch)
+    start_opensearch_event = EventSource(StartOpenSearch)
 
     def __init__(self, *args):
         super().__init__(*args)

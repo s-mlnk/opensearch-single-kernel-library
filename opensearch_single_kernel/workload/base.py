@@ -137,22 +137,11 @@ class BaseWorkload(ABC):
         """Return the Workload's paths"""
         pass
 
-    def write_file(self, path_str: str, data: str, override: bool = True):
-        """Persists data into file. Useful for files generated on the fly, such as certs etc."""
-        if not override and self.exists(path_str):
-            return
-        path = self.root / path_str
-
-        parent_dir_path = path.parent
-        if parent_dir_path:
-            parent_dir_path.mkdir(parents=True, exist_ok=True)
-
-        path.write_text(data)
-
     @contextmanager
     def temp_file(
         self,
         mode: str = "w+b",
+        data: str | None = None,
         encoding=None,
         dir: PathProtocol | None = None,
         delete=True,
@@ -167,11 +156,6 @@ class BaseWorkload(ABC):
         """Return whether the path exists in filesystem."""
         path = self.root / path_str
         return path.exists()
-
-    @abstractmethod
-    def remove_file(self, file_path: str):
-        """Remove file from the filesystem."""
-        pass
 
     @abstractmethod
     def is_service_started(self, paused: Optional[bool] = False) -> bool:

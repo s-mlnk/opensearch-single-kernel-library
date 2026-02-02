@@ -95,7 +95,7 @@ class BaseManager:
                         roles=obj["roles"],
                         ip=obj["ip"],
                         app=App(id=obj["attributes"]["app_id"]),
-                        unit_id=int(obj["name"].split(".")[0].split("-")[-1]),
+                        unit_number=int(obj["name"].split(".")[0].split("-")[-1]),
                         temperature=obj.get("attributes", {}).get("temp"),
                     )
                     nodes.append(node)

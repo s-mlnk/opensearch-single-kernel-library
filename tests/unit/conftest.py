@@ -46,3 +46,5 @@ def mock_fs_interactions(mocker, substrate: Substrate) -> None:
     """Mock Filesystem interactions."""
     mocker.patch("charmlibs.pathops.PathProtocol.read_text")
     mocker.patch("charmlibs.pathops.PathProtocol.write_text")
+    mocker.patch("charmlibs.pathops.PathProtocol.mkdir")
+    mocker.patch("charmlibs.pathops.PathProtocol.unlink")

@@ -72,6 +72,7 @@ class VMWorkload(BaseWorkload):
     def temp_file(
         self,
         mode="w+b",
+        data: str | None = None,
         encoding: str | None = None,
         dir: PathProtocol | None = None,
         delete: bool = True,
@@ -83,14 +84,17 @@ class VMWorkload(BaseWorkload):
         f = tempfile.NamedTemporaryFile(
             mode=mode, encoding=encoding, dir=dir, delete=False, errors=errors, suffix=suffix
         )
+        file_path: PathProtocol = self.root / f.name
         try:
-            yield f
+            if data:
+                file_path.write_text(data)
+            yield file_path
         finally:
             if not f.closed:
                 f.close()
             if delete:
                 try:
-                    os.unlink(f.name)
+                    file_path.unlink()
                 except OSError as e:
                     raise e
 
@@ -188,13 +192,6 @@ class VMWorkload(BaseWorkload):
             raise OpenSearchMissingError()
 
         return service_failed("snap.opensearch.daemon.service")
-
-    @override
-    def remove_file(self, file_path: str):
-        """Remove file from the filesystem."""
-        path = self.root / file_path
-        if path.exists():
-            path.unlink()
 
     @override
     def start_service(self):

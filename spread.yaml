@@ -159,7 +159,7 @@ prepare: |
     microk8s start
   fi
 
-  if [[ $SPREAD_SUITE == *"lxd"* ]]
+  if [[ $SPREAD_SUITE == *"vm"* ]]
   then
     concierge prepare --trace -c concierge-lxd.yaml --extra-debs pipx
   fi
@@ -178,14 +178,14 @@ prepare-each: |
   cd "$SPREAD_PATH"
 
   # `concierge prepare` needs to be run for each spread job in case Juju version changed
-  if [[ $SPREAD_SUITE == *"lxd"* ]]
+  if [[ $SPREAD_SUITE == *"vm"* ]]
   then
     concierge prepare --trace -c concierge-lxd.yaml
   else
     concierge prepare --trace -c concierge-microk8s.yaml
   fi
 
-  if [[ $SPREAD_SUITE == *"lxd"* ]]
+  if [[ $SPREAD_SUITE == *"vm"* ]]
   then
     juju switch concierge-lxd
   else
