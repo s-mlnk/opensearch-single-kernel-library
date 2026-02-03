@@ -60,7 +60,8 @@ class ActionsEventsHandler(Object):
 
         password = event.params.get("password") or generate_password()
         try:
-            self.charm.users_manager.put_or_update_internal_user_leader(user_name, password)
+            if self.charm.unit.is_leader():
+                self.charm.users_manager.put_or_update_internal_user_leader(user_name, password)
             label = self.charm.state.secrets.password_key(user_name)
             event.set_results({label: password})
             # We know we are already running for MAIN_ORCH. and its leader unit

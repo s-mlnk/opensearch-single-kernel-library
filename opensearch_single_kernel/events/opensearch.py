@@ -28,6 +28,7 @@ from ops import (
 
 from opensearch_single_kernel.common.constants import (
     COS_USER,
+    KIBANA_SERVER_USER,
     NODE_LOCK_RELATION,
     OPENSEARCH_STORAGE_NAME,
     OPENSEARCH_SYSTEM_USERS,
@@ -1025,7 +1026,56 @@ class OpenSearchEventsHandler(Object):
             logger.info("Secret %s has no label, ignoring it.", event.secret.id)
             return
 
-        # TODO: Address secrets management in a separate PR
+        try:
+            label_parts = self.charm.state.secrets.breakdown_label(event.secret.label)
+        except ValueError:
+            logging.info(f"Label {event.secret.label} was meaningless for us, returning")
+            return
+        # We need to take action on 5 secret types
+        # 1. TLS credentials change
+        #     - Action: update credentials files
+        # 2. 'kibanaserver' user credentials change
+        #     - Action: Dashboard relation (secret) needs to be updated
+        # 3. System user hash secret update
+        #     - Action: Every unit needs to update local internal_users.yml
+        #     - Note: Leader is updated already
+        # 4. S3 credentials (secret / access keys) in large relations
+        #     - Action: write them into the opensearch.yml by running backup module
+        # 5. Azure credentials (storage account / secret key)
+        #
+        # On a separate note: Handling for JWT-config related secrets (e.g. signing-key) happens
+        # in the `JwtHandler` class, as it is a secret that is provided from another application
+        system_user_hash_keys = [
+            self.charm.state.secrets.hash_key(user) for user in OPENSEARCH_SYSTEM_USERS
+        ]
+        keys_to_process = system_user_hash_keys + [
+            CertType.APP_ADMIN.val,
+            self.charm.state.secrets.password_key(KIBANA_SERVER_USER),
+        ]
+        # Variables for better readability
+        label_key = label_parts["key"]
+        is_leader = self.charm.unit.is_leader()
+
+        # Matching secrets by label
+        if (
+            label_parts["application_name"] != self.charm.app.name
+            or label_parts["scope"] != Scope.APP
+            or label_key not in keys_to_process
+        ):
+            logger.info("Secret %s was not relevant for us.", event.secret.label)
+            return
+
+        logger.debug("Secret change for %s", str(label_key))
+
+        if is_leader and label_key == self.charm.state.secrets.password_key(KIBANA_SERVER_USER):
+            pass
+            # self.charm.opensearch_provider.update_dashboards_password()
+
+        # Non-leader units need to maintain local users in internal_users.yml
+        elif not is_leader and label_key in system_user_hash_keys:
+            password = event.secret.get_content()[label_key]
+            if sys_user := self.charm.state.secrets._user_from_hash_key(label_key):
+                self.charm.users_manager.put_internal_user(sys_user, password)
 
     def unit_allowed_to_start(self, event: StartOpenSearch) -> bool:
         """Check if the unit is allowed to start.
