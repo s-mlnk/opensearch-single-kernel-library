@@ -8,10 +8,9 @@ import logging
 import pytest
 from pytest_operator.plugin import OpsTest
 
+from tests.integration.ha.continuous_writes import ContinuousWrites
 from tests.integration.ha.helpers import app_name
 from tests.integration.helpers import APP_NAME
-
-from .continuous_writes import ContinuousWrites
 
 
 @dataclasses.dataclass(frozen=True)
