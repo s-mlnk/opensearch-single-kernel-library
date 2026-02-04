@@ -196,7 +196,7 @@ class NodesExclusionsManager(BaseManager):
         app-level peer data.
         """
         state = self.state.application if scope == Scope.APP else self.state.server
-        for lst in [state.allocation_exclusions_to_delete, state.voting_exclusions_to_delete]:
+        for lst in [state.allocation_exclusions_to_delete, state.delete_voting_exclusions]:
             # Load the content of the list, avoiding '' entries
             lst = lst.union({unit_name})
 

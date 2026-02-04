@@ -232,11 +232,11 @@ class OpenSearchEventsHandler(Object):
         self.charm.status.apply_health(wait_for_green_first=True, unit=False)
 
         n_units = sum(1 for node in remaining_nodes if node.app.id == current_app.id)
-        if n_units == self.app.planned_units():
+        if n_units == self.charm.app.planned_units():
             self.charm.cluster_manager.compute_and_broadcast_updated_topology(remaining_nodes)
         else:
             logger.debug(
-                f"Waiting for units to leave: expecting {self.app.planned_units()}, currently {n_units}. Deferring event."
+                f"Waiting for units to leave: expecting {self.charm.app.planned_units()}, currently {n_units}. Deferring event."
             )
             event.defer()
         self.charm.exclusions_manager.add_to_cleanup_list(
