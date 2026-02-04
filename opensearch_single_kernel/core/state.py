@@ -347,6 +347,7 @@ class OpenSearchApplication(RelationState):
         """Set the value of 'allocation_exclusion_to_delete' in application databag."""
         self.update({"allocation-exclusions-to-delete": ",".join(value)})
 
+    @property
     def is_data_role_in_cluster_fleet_apps(self) -> bool:
         """Look for data-role through all the roles of all the nodes in all applications"""
         data_apps_in_fleet = [app for app in self.apps_in_fleet() if "data" in app.roles]

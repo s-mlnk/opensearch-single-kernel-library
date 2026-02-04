@@ -587,7 +587,7 @@ class ClusterManager(BaseManager):
             self.state.application.update({"nodes_config": None})
             # we delete the security index initialised and bootstrapped flags
             # if there are no data units left in all cluster
-            if not self.state.application.is_data_role_in_cluster_fleet_apps(self):
+            if not self.state.application.is_data_role_in_cluster_fleet_apps:
                 self.state.application.update({"is_security_index_initialised": None})
                 self.state.application.update({"bootstrapped": None})
         # TODO: Large Deployment
