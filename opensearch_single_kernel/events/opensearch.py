@@ -113,6 +113,7 @@ class OpenSearchEventsHandler(Object):
 
     def _on_peer_relation_created(self, event: RelationCreatedEvent):
         """Event received by the new node joining the cluster."""
+        pass
         # TODO: Handle upgrades
         # if self.upgrade_in_progress:
         # logger.warning(
@@ -122,6 +123,7 @@ class OpenSearchEventsHandler(Object):
 
     def _on_peer_relation_joined(self, event: RelationJoinedEvent):
         """Event received by all units when a new node joins the cluster."""
+        pass
         # TODO: Handle upgrades
         # if self.upgrade_in_progress:
         #    logger.warning(
@@ -869,11 +871,15 @@ class OpenSearchEventsHandler(Object):
                 # do not add exclusions if it's the last unit to stop
                 # otherwise cluster manager election will be blocked when starting up again
                 # and reusing storage
-                # TODO: Configure exclusions
                 if len(nodes) > 1:
-                    pass
-                # 1. Add current node to the voting + alloc exclusions
-                # self.opensearch_exclusions.add_current(voting=True, allocation=not restart)
+                    # 1. Add current node to the voting + alloc exclusions
+                    current_node = self.charm.config_manager.current_node
+                    self.charm.exclusions_manager.add_current(
+                        node=current_node,
+                        scope=Scope.APP if self.charm.unit.is_leader() else Scope.UNIT,
+                        voting=True,
+                        allocation=not restart,
+                    )
             except OpenSearchHttpError:
                 logger.debug("Failed to get online nodes, voting and alloc exclusions not added")
 

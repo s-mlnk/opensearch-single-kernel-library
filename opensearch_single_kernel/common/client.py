@@ -47,9 +47,9 @@ class OpenSearchClient:
     def apply_no_replication_to_index(
         self,
         index: str,
-    ) -> bool:
+    ) -> None:
         """Apply replication settings to an index."""
-        return self.request(
+        self.request(
             method="PUT",
             endpoint=f"/{index}/_settings",
             payload={"index": {"auto_expand_replicas": "0-all"}},
@@ -156,7 +156,7 @@ class OpenSearchClient:
             if node["name"] == unit_name:
                 return n_id
 
-    def get_current_node(self, node_id: str, unit_id: str, alt_hosts: list[str] | None) -> Node:
+    def get_current_node(self, node_id: str, unit_id: int, alt_hosts: list[str] | None) -> Node:
         """Get the current OpenSearch node information."""
         nodes = self.request("GET", f"/_nodes/{node_id}", alt_hosts=alt_hosts)
 

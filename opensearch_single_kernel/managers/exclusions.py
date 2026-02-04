@@ -98,6 +98,27 @@ class NodesExclusionsManager(BaseManager):
         except OpenSearchHttpError:
             return False
 
+    def add_current(
+        self,
+        node: Node,
+        scope: Scope,
+        voting: bool = True,
+        allocation: bool = True,
+        raise_error: bool = False,
+    ) -> None:
+        """Add voting and alloc exclusions."""
+        if voting and (node.is_cm_eligible() or node.is_voting_only()):
+            if not self._add_voting(scope, node):
+                logger.error(f"Failed to add voting exclusion: {node.name}.")
+                if raise_error:
+                    raise OpenSearchExclusionsException("Failed to add voting exclusion.")
+
+        if allocation and node.is_data():
+            if not self.opensearch_client.add_allocations(node=node, alt_hosts=self.alt_hosts):
+                logger.error(f"Failed to add shard allocation exclusion: {node.name}.")
+                if raise_error:
+                    raise OpenSearchExclusionsException("Failed to add allocation exclusion.")
+
     def delete_current(
         self,
         node: Node,
@@ -178,3 +199,25 @@ class NodesExclusionsManager(BaseManager):
         for lst in [state.allocation_exclusions_to_delete, state.voting_exclusions_to_delete]:
             # Load the content of the list, avoiding '' entries
             lst = lst.union({unit_name})
+
+    def _add_voting(self, scope: Scope, node: Node, exclusions: set[str] | None = None) -> bool:
+        """Include the current node in the CMs voting exclusions list of nodes."""
+        try:
+            to_add = exclusions or {node.name}
+            result = self.opensearch_client.add_voting_exclusions(
+                exclusions=to_add,
+                alt_hosts=self._charm.alt_hosts,
+            )
+            if scope == Scope.APP:
+                self.state.application.delete_voting_exclusions = to_add.union(
+                    self.state.application.delete_voting_exclusions
+                )
+            else:
+                self.state.server.delete_voting_exclusions = to_add.union(
+                    self.state.server.delete_voting_exclusions
+                )
+
+            # The voting excl. API returns a status only
+            return result
+        except OpenSearchHttpError:
+            return False

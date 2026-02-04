@@ -600,7 +600,7 @@ class ClusterManager(BaseManager):
         # elif self.opensearch_peer_cm.is_consumer():
         #    self.peer_cluster_requirer.refresh_requirer_relation_data()
 
-    def flush_translog_to_disk(self):
+    def flush_translog_to_disk(self) -> None:
         """Flush OpenSearch translog to disk."""
         if self.opensearch_client.is_node_up():
             try:
