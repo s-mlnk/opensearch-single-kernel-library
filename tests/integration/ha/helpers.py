@@ -133,7 +133,7 @@ async def all_nodes(ops_test: OpsTest, unit_ip: str, app: str = APP_NAME) -> lis
                 roles=node["roles"],
                 ip=node["ip"],
                 app=App(id=node["attributes"]["app_id"]),
-                unit_id=int(node["name"].split(".")[0].split("-")[-1]),
+                unit_number=int(node["name"].split(".")[0].split("-")[-1]),
                 temperature=node.get("attributes", {}).get("temp"),
             )
         )
