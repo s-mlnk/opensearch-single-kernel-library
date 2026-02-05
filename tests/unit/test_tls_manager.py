@@ -821,7 +821,7 @@ def test_on_certificate_available_ca_rotation_first_stage_any_cluster_leader(
     assert harness.charm.state.server.tls_ca_renewing
     assert isinstance(harness.model.unit.status, MaintenanceStatus)
     assert harness.model.unit.status.message == CharmStatuses.TLS_CA_ROTATION.value.message
-    assert harness.model.unit.status, MaintenanceStatus != original_status
+    assert harness.model.unit.status != original_status
     harness.charm.restart_opensearch_event.emit.assert_called_once()
 
     # The new certificate is now replacing the old one in Peer Relation secrets
@@ -1081,14 +1081,15 @@ def test_on_certificate_available_ca_rotation_second_stage_any_cluster_leader(
     # new admin cert
     assert request_certificate_creation.call_count == 1
     # we store the decoded csr in the secret but pass it as bytes to the function
-    request_certificate_creation.call_args.kwargs[
-        "certificate_signing_request"
-    ].decode() == new_app_admin_secret["csr"]
+    assert (
+        request_certificate_creation.call_args.kwargs["certificate_signing_request"].decode()
+        == new_app_admin_secret["csr"]
+    )
 
     assert (
         harness.model.unit.status.message == CharmStatuses.TLS_NOT_FULLY_CONFIGURED.value.message
     )
-    assert harness.model.unit.status, MaintenanceStatus != original_status
+    assert harness.model.unit.status != original_status
 
 
 # Mocks on functions we want to investigate
@@ -1245,7 +1246,7 @@ def test_on_certificate_available_ca_rotation_second_stage_any_cluster_non_leade
     assert (
         harness.model.unit.status.message == CharmStatuses.TLS_NOT_FULLY_CONFIGURED.value.message
     )
-    assert harness.model.unit.status, MaintenanceStatus != original_status
+    assert harness.model.unit.status != original_status
 
 
 @pytest.mark.parametrize(
@@ -1365,7 +1366,7 @@ def test_on_certificate_available_ca_rotation_third_stage_leader_cert_app(
     }
 
     assert harness.model.unit.status.message == ""
-    assert harness.model.unit.status, MaintenanceStatus != original_status
+    assert harness.model.unit.status == original_status
 
 
 # Mocks to investigate/compare/alter
@@ -1546,7 +1547,7 @@ def test_on_certificate_available_ca_rotation_third_stage_any_unit_cert_unit(
     assert not harness.charm.state.server.tls_ca_renewed
 
     assert harness.model.unit.status.message == ""
-    assert harness.model.unit.status, MaintenanceStatus != original_status
+    assert harness.model.unit.status == original_status
 
 
 # Additional potential phases of the workflow

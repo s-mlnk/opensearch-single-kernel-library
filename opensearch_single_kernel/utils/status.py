@@ -83,7 +83,6 @@ class Status:
         if status != HealthColors.YELLOW_TEMP:
             self.charm.status.clear(
                 CharmStatuses.WAITING_FOR_SPECIFIC_BUSY_SHARDS,
-                dynamic_message="The shards: {} need to complete building.",
                 pattern=Status.CheckPattern.Interpolated,
             )
             return
@@ -93,28 +92,25 @@ class Status:
         )
         if not busy_shards:
             self.charm.status.clear(
-                CharmStatuses.WAITING_FOR_BUSY_SHARDS, pattern=Status.CheckPattern.Interpolated
+                CharmStatuses.WAITING_FOR_SPECIFIC_BUSY_SHARDS,
+                pattern=Status.CheckPattern.Interpolated,
             )
             return
 
         message = sorted([f"{key}/{','.join(val)}" for key, val in busy_shards.items()])
-        message = "The shards: {} need to complete building.".format(" - ".join(message))
         self.charm.status.set(
-            CharmStatuses.WAITING_FOR_SPECIFIC_BUSY_SHARDS, dynamic_message=message
+            CharmStatuses.WAITING_FOR_SPECIFIC_BUSY_SHARDS,
+            dynamic_params={"shards": " - ".join(message)},
         )
 
     def clear(
         self,
         status: CharmStatuses,
         pattern: CheckPattern = CheckPattern.Equal,
-        dynamic_message: str | None = None,
         app: bool = False,
     ):
         """Resets the unit status if it was previously blocked/maintenance with message."""
-        if dynamic_message:
-            status_message = dynamic_message
-        else:
-            status_message = status.value.message
+        status_message = status.value.message
         context = self.charm.app if app else self.charm.unit
 
         condition: bool
@@ -125,10 +121,8 @@ class Status:
         elif pattern == Status.CheckPattern.End:
             condition = context.status.message.endswith(status_message)
         elif pattern == Status.CheckPattern.Interpolated:
-            condition = (
-                re.fullmatch(status_message.replace("{}", "(?s:.*?)"), context.status.message)
-                is not None
-            )
+            regex_pattern = re.sub(r"\{.*?\}", r"(?s:.*?)", status_message)
+            condition = re.fullmatch(regex_pattern, context.status.message) is not None
         else:
             condition = status_message in context.status.message
 
@@ -144,7 +138,10 @@ class Status:
             context.status = ActiveStatus()
 
     def set(
-        self, charm_status: CharmStatuses, app: bool = False, dynamic_message: str | None = None
+        self,
+        charm_status: CharmStatuses,
+        app: bool = False,
+        dynamic_params: dict[str, str] | None = None,
     ):
         """Set status on unit or app IF not already set.
 
@@ -159,9 +156,9 @@ class Status:
         # if app and self.charm._upgrade and (upgrade_status := self.charm._upgrade.app_status):
         # context.status = upgrade_status
         # return
-        if dynamic_message:
+        if dynamic_params:
             # We need to update the default message
-            status_message = dynamic_message
+            status_message = charm_status.value.message.format(**dynamic_params)
             status_class = status.__class__
             status = status_class(status_message)
 

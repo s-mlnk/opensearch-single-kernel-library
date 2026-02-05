@@ -19,6 +19,7 @@ from opensearch_single_kernel.common.constants import (
     CLUSTER_MANAGER_ROLE_REMOVAL_FORBIDDEN,
     CLUSTER_MANAGER_VOTING_ROLES_PROVIDED_INVALID,
     GENERATED_ROLES,
+    OPENSEARCH_HTTP_PORT,
     PEER_CLUSTER_NO_RELATION,
     PEER_CLUSTER_WRONG_RELATION,
     CertType,
@@ -538,7 +539,7 @@ class ClusterManager(BaseManager):
     @property
     def is_opensearch_started(self) -> bool:
         """Returns whether OpenSearch has started."""
-        reachable = self.workload.is_reachable(self.state.host_ip, self.state.port)
+        reachable = self.workload.is_reachable(self.state.host_ip, OPENSEARCH_HTTP_PORT)
         if not reachable:
             logger.debug("Cannot connect to the OpenSearch server...")
 
@@ -637,7 +638,7 @@ class ClusterManager(BaseManager):
 
     def is_started(self) -> bool:
         """Return whether the opensearch service is started."""
-        reachable = self.workload.is_reachable(self.state.host_ip, self.state.port)
+        reachable = self.workload.is_reachable(self.state.host_ip, OPENSEARCH_HTTP_PORT)
         if not reachable:
             logger.debug("Cannot connect to the OpenSearch server...")
 

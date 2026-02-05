@@ -386,7 +386,7 @@ class OpenSearchEventsHandler(Object):
             missing = [cert.val for cert in certs.keys()]
             self.charm.status.set(
                 CharmStatuses.TLS_CERTS_EXPIRATION_ERROR,
-                dynamic_message=f"The certificates: {', '.join(missing)} need to be refreshed.",
+                dynamic_params={"certificates": ", ".join(missing)},
             )
 
             # stop opensearch in case the Node-transport certificate expires.
@@ -942,13 +942,12 @@ class OpenSearchEventsHandler(Object):
             logger.error("Missing profile requirements: %s", missing_requirements)
             self.charm.status.set(
                 CharmStatuses.MISSING_PROFILE_REQUIREMENTS,
-                dynamic_message=f"Missing requirements: {' - '.join(missing_requirements)}",
+                dynamic_params={"requirements": " - ".join(missing_requirements)},
             )
         else:
             self.charm.status.clear(
                 CharmStatuses.MISSING_PROFILE_REQUIREMENTS,
-                dynamic_message="Missing requirements:",
-                pattern=Status.CheckPattern.Start,
+                pattern=Status.CheckPattern.Interpolated,
             )
 
     def cleanup_start_state(self) -> None:
@@ -1165,7 +1164,7 @@ class OpenSearchEventsHandler(Object):
 
     def request_new_unit_certificates(self) -> None:
         """Requests a new certificate with the given scope and type from the tls operator."""
-        self.charm.state.server.update({"tls_configured": None})
+        self.charm.state.server.update({"tls_configured": ""})
         # TODO: Update peer cluster relation
         # self.charm.tls.update_tls_flag_to_peer_cluster_relation("tls_configured", "remove")
 

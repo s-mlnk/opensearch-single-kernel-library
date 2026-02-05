@@ -152,11 +152,6 @@ class BaseWorkload(ABC):
         """Context manager for creating temporary files."""
         pass
 
-    def exists(self, path_str: str) -> bool:
-        """Return whether the path exists in filesystem."""
-        path = self.root / path_str
-        return path.exists()
-
     @abstractmethod
     def is_service_started(self, paused: Optional[bool] = False) -> bool:
         """Check if the snap service and JVM process are running.

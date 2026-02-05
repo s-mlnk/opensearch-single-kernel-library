@@ -552,8 +552,8 @@ class ClusterState(Object):
         # if this flag is set, the CA rotation routine is complete for this unit
         if self.server.tls_ca_renewed and self.ca_and_certs_rotation_complete_in_cluster():
             # both CA rotation and certs rotation completed in the cluster
-            self.server.update({"tls_ca_renewing": None})
-            self.server.update({"tls_ca_renewed": None})
+            self.server.update({"tls_ca_renewing": ""})
+            self.server.update({"tls_ca_renewed": ""})
             # TODO: Handle large deployment
             # self.update_tls_flag_to_peer_cluster_relation(
             # flag="tls_ca_renewing", operation="remove"

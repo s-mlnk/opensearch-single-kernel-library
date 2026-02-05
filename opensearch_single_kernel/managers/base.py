@@ -7,7 +7,7 @@ import random
 from typing import List, Optional
 
 from opensearch_single_kernel.common.client import OpenSearchClient
-from opensearch_single_kernel.common.constants import Scope
+from opensearch_single_kernel.common.constants import OPENSEARCH_HTTP_PORT, Scope
 from opensearch_single_kernel.core.models import App, Node
 from opensearch_single_kernel.core.state import ClusterState
 from opensearch_single_kernel.workload.base import BaseWorkload
@@ -28,7 +28,9 @@ class BaseManager:
         """Initialize an opensearch client"""
         admin_field = self.state.secrets.password_key("admin")
         admin_secret = self.state.secrets.get(Scope.APP, admin_field)
-        return OpenSearchClient(self.workload, self.state.host_ip, self.state.port, admin_secret)
+        return OpenSearchClient(
+            self.workload, self.state.host_ip, OPENSEARCH_HTTP_PORT, admin_secret
+        )
 
     @property
     def alt_hosts(self) -> Optional[List[str]]:

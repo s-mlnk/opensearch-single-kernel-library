@@ -112,6 +112,10 @@ jobs:
           merge-multiple: true
       - name: Configure sysctl
         run: |
+          sudo lxc image copy ubuntu:568f69ff1166 local:
+          sudo lxc image alias create "juju/ubuntu@22.04/amd64" 568f69ff1166
+      - name: Configure sysctl
+        run: |
           sudo tee -a /etc/sysctl.conf > /dev/null <<EOT
           vm.max_map_count=262144
           vm.swappiness=0

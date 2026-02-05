@@ -24,7 +24,9 @@ class CharmStatuses(Enum):
     TLS_RELATION_BROKEN = BlockedStatus(
         "Relation broken with the TLS Operator while TLS not fully configured. Stopping OpenSearch."
     )
-    TLS_CERTS_EXPIRATION_ERROR = BlockedStatus("The certificates:  need to be refreshed.")
+    TLS_CERTS_EXPIRATION_ERROR = BlockedStatus(
+        "The certificates: {certificates} need to be refreshed."
+    )
     TLS_NEW_CERTS_REQUESTED = MaintenanceStatus("Requesting new TLS certificates...")
 
     # Profiles
@@ -37,7 +39,7 @@ class CharmStatuses(Enum):
     ADMIN_USER_NOT_CONFIGURED = MaintenanceStatus(
         "Waiting for the admin user to be fully configured..."
     )
-    MISSING_PROFILE_REQUIREMENTS = BlockedStatus("Missing profile requirements.")
+    MISSING_PROFILE_REQUIREMENTS = BlockedStatus("Missing requirements: {requirements}")
 
     # Health Status
     CLUSTER_HEALTH_RED = BlockedStatus(
@@ -50,7 +52,9 @@ class CharmStatuses(Enum):
         "1 or more 'replica' shards are not assigned, please scale your application up."
     )
     WAITING_FOR_BUSY_SHARDS = MaintenanceStatus("Some shards are still initializing / relocating.")
-    WAITING_FOR_SPECIFIC_BUSY_SHARDS = WaitingStatus("The shards need to complete building")
+    WAITING_FOR_SPECIFIC_BUSY_SHARDS = WaitingStatus(
+        "The shards {shards} need to complete building"
+    )
 
     # Lock Status
     REQUEST_LOCK_ON_START = WaitingStatus("Requesting lock on operation: start")
