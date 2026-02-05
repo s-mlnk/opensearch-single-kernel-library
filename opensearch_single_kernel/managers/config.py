@@ -44,7 +44,7 @@ class ConfigManager(BaseManager):
     @property
     def yaml_setter(self):
         """Return the yaml_setter."""
-        return YamlConfigSetter(self.workload.paths.conf)
+        return YamlConfigSetter(self.workload)
 
     def load_node(self):
         """Load the opensearch.yml config of the node."""
@@ -235,7 +235,7 @@ class ConfigManager(BaseManager):
         # only update the file if there is data to update
         if cm_ips_set:
             lines = "\n".join([entry for entry in cm_ips_set if entry.strip()])
-            self.workload.paths.seed_hosts.write_text(f"{lines}\n")
+            self.workload.write_text(f"{lines}\n", self.workload.paths.seed_hosts)
 
     def set_admin_tls_conf(self, secrets: dict[str, Any]):
         """Configures the admin certificate."""

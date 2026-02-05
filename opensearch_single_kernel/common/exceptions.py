@@ -86,3 +86,7 @@ class OpenSearchProvidedRolesException(OpenSearchError):
 
 class OpenSearchExclusionsException(OpenSearchError):
     """Exception class for all Voting/Allocation exclusions related exceptions."""
+
+
+class OpenSearchFileOperationError(OpenSearchError):
+    """Exception thrown when file operations related to OpenSearch fail."""

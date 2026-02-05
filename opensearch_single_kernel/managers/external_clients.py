@@ -20,4 +20,4 @@ class ExternalClientsManager(BaseManager):
     def __init__(self, state: ClusterState, workload: BaseWorkload):
         super().__init__(state, workload)
         self.name = "external_clients_manager"
-        self.yaml_setter = YamlConfigSetter(self.workload.paths.conf)
+        self.yaml_setter = YamlConfigSetter(self.workload)

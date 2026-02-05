@@ -18,6 +18,8 @@ from overrides import override
 from ruamel.yaml import YAML, CommentedSeq
 from ruamel.yaml.comments import CommentedSet
 
+from opensearch_single_kernel.workload.base import BaseWorkload
+
 logger = logging.getLogger(__name__)
 
 
@@ -162,9 +164,10 @@ class ConfigSetter(ABC):
 class YamlConfigSetter(ConfigSetter):
     """Class for updating YAML config on the file system."""
 
-    def __init__(self, base_path: PathProtocol):
+    def __init__(self, workload: BaseWorkload):
         """base_path: if set, where to look for files relatively on "load/put/delete" methods."""
-        super().__init__(base_path)
+        super().__init__(workload.paths.conf)
+        self.workload = workload
         self.yaml = YAML()
 
     @override
@@ -174,8 +177,7 @@ class YamlConfigSetter(ConfigSetter):
 
         if not path.exists():
             raise FileNotFoundError(f"{path} not found.")
-
-        lines = path.read_text().split("\n")
+        lines = self.workload.read_text(path).split("\n")
 
         # We are adding a random key:value to the end of the yaml
         # To make sure that the yaml reader will be able to read the file
@@ -266,7 +268,7 @@ class YamlConfigSetter(ConfigSetter):
         if not path.exists():
             raise FileNotFoundError(f"{path} not found.")
 
-        data = path.read_text()
+        data = self.workload.read_text(path)
 
         if regex and old_val and re.compile(old_val, re.MULTILINE).findall(data):
             data = re.sub(r"{}".format(old_val), f"{new_val}", data)
@@ -281,7 +283,7 @@ class YamlConfigSetter(ConfigSetter):
         if output_file is None:
             output_file = path
 
-        output_file.write_text(data)
+        self.workload.write_text(data, output_file)
 
     @override
     def append(
@@ -297,11 +299,11 @@ class YamlConfigSetter(ConfigSetter):
         """
         path = self.base_path / config_file
 
-        data = path.read_text()
+        data = self.workload.read_text(path)
         data = data + "\n" + text_to_append
         if not path.exists():
             raise FileNotFoundError(f"{path} not found.")
-        path.write_text(data)
+        self.workload.write_text(data, path)
 
     def __dump(self, data: Dict[str, Any], output_type: OutputType, target_file: str):
         """Write the YAML data on the corresponding "output_type" stream."""

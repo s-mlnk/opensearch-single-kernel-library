@@ -87,7 +87,7 @@ class VMWorkload(BaseWorkload):
         file_path: PathProtocol = self.root / f.name
         try:
             if data:
-                file_path.write_text(data)
+                self.write_text(data, file_path)
             yield file_path
         finally:
             if not f.closed:

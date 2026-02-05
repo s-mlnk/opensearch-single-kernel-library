@@ -63,7 +63,7 @@ class ClusterManager(BaseManager):
     def __init__(self, state: ClusterState, workload: BaseWorkload):
         super().__init__(state, workload)
         self.name = "cluster_manager"
-        self.yaml_setter = YamlConfigSetter(self.workload.paths.conf)
+        self.yaml_setter = YamlConfigSetter(self.workload)
 
     def start(self, wait_until_http_200: bool = True):
         """Start the opensearch service."""

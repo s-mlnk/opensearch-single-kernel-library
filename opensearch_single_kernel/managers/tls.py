@@ -486,9 +486,9 @@ class TlsManager(BaseManager):
         if not bundle_path.exists():
             return
 
-        bundle_content = bundle_path.read_text()
+        bundle_content = self.workload.read_text(bundle_path)
         if ca_cert not in bundle_content:
-            bundle_path.write_text(f"{bundle_content}\n{ca_cert}")
+            self.workload.write_text(f"{bundle_content}\n{ca_cert}", bundle_path)
 
     def store_new_tls_resources(self, cert_type: CertType, secrets: dict[str, Any]):
         """Add key and cert to keystore."""
@@ -563,7 +563,7 @@ class TlsManager(BaseManager):
         parent_dir_path = chain_path.parent
         if parent_dir_path:
             parent_dir_path.mkdir(parents=True, exist_ok=True)
-        chain_path.write_text(admin_secret["chain"])
+        self.workload.write_text(admin_secret["chain"], chain_path)
 
     def store_admin_tls_secrets_if_applies(self) -> None:
         """Store admin TLS resources if available and mark unit as configured if correct."""
@@ -751,8 +751,8 @@ class TlsManager(BaseManager):
         if not bundle_path.exists():
             return
 
-        bundle_content = bundle_path.read_text()
-        bundle_path.write_text(bundle_content.replace(ca_cert, ""))
+        bundle_content = self.workload.read_text(bundle_path)
+        self.workload.write_text(bundle_content.replace(ca_cert, ""), bundle_path)
 
     def store_new_ca(self, secrets: dict[str, Any], create_store_pwd: bool) -> bool:
         """Add new CA cert to trust store."""

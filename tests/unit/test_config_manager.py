@@ -24,7 +24,8 @@ from tests.unit.helpers import (
 
 def test_set_client_auth(harness, mocker):
     """Test setting the client authentication config."""
-    yaml_conf_setter = YamlConfigSetter(config_path / "tmp")
+    yaml_conf_setter = YamlConfigSetter(harness.charm.workload)
+    yaml_conf_setter.base_path = config_path / "tmp"
 
     def authc() -> dict[str, Any]:
         return security_conf["config"]["dynamic"]["authc"]
@@ -45,7 +46,7 @@ def test_set_client_auth(harness, mocker):
     )
     mocker.patch(
         "opensearch_single_kernel.managers.config.ConfigManager.yaml_setter",
-        return_value=YamlConfigSetter(config_path / "tmp"),
+        return_value=yaml_conf_setter,
         new_callable=PropertyMock,
     )
     # configure host and network hosts
@@ -77,7 +78,8 @@ def test_set_client_auth(harness, mocker):
 
 def test_set_node_and_cleanup_if_bootstrapped(harness, mocker):
     """Test setting the core config of a node."""
-    yaml_conf_setter = YamlConfigSetter(config_path / "tmp")
+    yaml_conf_setter = YamlConfigSetter(harness.charm.workload)
+    yaml_conf_setter.base_path = config_path / "tmp"
     deployment_desc = mocker.patch(
         "opensearch_single_kernel.core.state.OpenSearchApplication.deployment_desc",
         new_callable=PropertyMock,
@@ -103,7 +105,7 @@ def test_set_node_and_cleanup_if_bootstrapped(harness, mocker):
 
     mocker.patch(
         "opensearch_single_kernel.managers.config.ConfigManager.yaml_setter",
-        return_value=YamlConfigSetter(config_path / "tmp"),
+        return_value=yaml_conf_setter,
         new_callable=PropertyMock,
     )
     # configure host and network hosts

@@ -42,7 +42,7 @@ class UsersManager(BaseManager):
     def __init__(self, state: ClusterState, workload: BaseWorkload):
         super().__init__(state, workload)
         self.name = "users_manager"
-        self.yaml_setter = YamlConfigSetter(self.workload.paths.conf)
+        self.yaml_setter = YamlConfigSetter(self.workload)
 
     def put_or_update_internal_user_leader(
         self,
