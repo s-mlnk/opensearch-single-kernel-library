@@ -17,13 +17,12 @@ from tests.integration.conftest import (
 )
 from tests.integration.ha.continuous_writes import ContinuousWrites
 from tests.integration.ha.helpers import (
-    app_name,
     assert_continuous_writes_increasing,
     storage_id,
     storage_type,
 )
 from tests.integration.ha.test_horizontal_scaling import IDLE_PERIOD
-from tests.integration.helpers import get_application_unit_ids, wait_until
+from tests.integration.helpers import app_name, get_application_unit_ids, wait_until
 from tests.integration.tls.conftest import TLS_CERTIFICATES_APP_NAME, TLS_STABLE_CHANNEL
 
 logger = logging.getLogger(__name__)

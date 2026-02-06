@@ -19,7 +19,6 @@ from tests.integration.conftest import (
 from tests.integration.ha.continuous_writes import ContinuousWrites
 from tests.integration.ha.helpers import (
     all_nodes,
-    app_name,
     assert_continuous_writes_consistency,
     get_elected_cm_unit_id,
     get_number_of_shards_by_node,
@@ -33,6 +32,7 @@ from tests.integration.ha.helpers_data import (
     delete_dummy_indexes,
 )
 from tests.integration.helpers import (
+    app_name,
     check_cluster_formation_successful,
     cluster_health,
     get_application_unit_ids,

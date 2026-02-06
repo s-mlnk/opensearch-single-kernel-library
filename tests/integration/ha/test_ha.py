@@ -21,7 +21,6 @@ from tests.integration.ha.conftest import (
 from tests.integration.ha.continuous_writes import ContinuousWrites
 from tests.integration.ha.helpers import (
     all_processes_down,
-    app_name,
     assert_continuous_writes_consistency,
     assert_continuous_writes_increasing,
     get_elected_cm_unit_id,
@@ -38,6 +37,7 @@ from tests.integration.ha.helpers_data import (
 )
 from tests.integration.ha.test_horizontal_scaling import IDLE_PERIOD
 from tests.integration.helpers import (
+    app_name,
     check_cluster_formation_successful,
     cluster_health,
     get_application_unit_ids,

@@ -11,13 +11,13 @@ from pytest_operator.plugin import OpsTest
 from tests.integration.conftest import APP_NAME, CONFIG_OPTS, MODEL_CONFIG
 from tests.integration.ha.continuous_writes import ContinuousWrites
 from tests.integration.ha.helpers import (
-    app_name,
     assert_continuous_writes_consistency,
     assert_continuous_writes_increasing,
     get_elected_cm_unit_id,
 )
 from tests.integration.ha.test_horizontal_scaling import IDLE_PERIOD
 from tests.integration.helpers import (
+    app_name,
     cluster_health,
     cluster_voting_config_exclusions,
     execute_update_status_manually,

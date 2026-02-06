@@ -15,10 +15,11 @@ from tests.integration.conftest import (
 )
 from tests.integration.ha.conftest import SECOND_APP_NAME
 from tests.integration.ha.continuous_writes import ContinuousWrites
-from tests.integration.ha.helpers import app_name, assert_continuous_writes_consistency
+from tests.integration.ha.helpers import assert_continuous_writes_consistency
 from tests.integration.ha.helpers_data import delete_index, index_doc, search
 from tests.integration.ha.test_horizontal_scaling import IDLE_PERIOD
 from tests.integration.helpers import (
+    app_name,
     get_application_unit_ids,
     get_leader_unit_ip,
     wait_until,

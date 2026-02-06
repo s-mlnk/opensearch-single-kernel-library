@@ -3,7 +3,6 @@
 # See LICENSE file for licensing details.
 
 import asyncio
-import json
 import logging
 import subprocess
 import time
@@ -46,31 +45,6 @@ def nodes_count_by_role(nodes: list[Node]) -> dict[str, int]:
             result[role] += 1
 
     return result
-
-
-async def app_name(ops_test: OpsTest) -> str | None:
-    """Returns the name of the cluster running OpenSearch.
-
-    This is important since not all deployments of the OpenSearch charm have the
-    application name "opensearch".
-    Note: if multiple clusters are running OpenSearch this will return the one first found.
-    """
-    apps = json.loads(
-        subprocess.check_output(
-            f"juju status --model {ops_test.model.info.name} --format=json".split()
-        )
-    )["applications"]
-
-    logger.info(f"Apps inside app_name: {apps}")
-
-    opensearch_apps = {
-        name: desc for name, desc in apps.items() if desc["charm-name"] == "opensearch"
-    }
-    for name, desc in opensearch_apps.items():
-        if name == "opensearch-main":
-            return name
-
-    return list(opensearch_apps.keys())[0] if opensearch_apps else None
 
 
 @retry(

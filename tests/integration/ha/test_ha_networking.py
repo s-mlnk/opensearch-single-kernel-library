@@ -15,7 +15,6 @@ from tests.integration.conftest import (
 )
 from tests.integration.ha.continuous_writes import ContinuousWrites
 from tests.integration.ha.helpers import (
-    app_name,
     assert_continuous_writes_consistency,
     assert_continuous_writes_increasing,
     cut_network_from_unit_with_ip_change,
@@ -29,6 +28,7 @@ from tests.integration.ha.helpers import (
 )
 from tests.integration.ha.test_horizontal_scaling import IDLE_PERIOD
 from tests.integration.helpers import (
+    app_name,
     check_cluster_formation_successful,
     get_application_unit_ids_hostnames,
     get_application_unit_ids_ips,
