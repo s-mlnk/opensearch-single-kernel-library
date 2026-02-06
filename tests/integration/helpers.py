@@ -6,6 +6,8 @@ import asyncio
 import json
 import logging
 import random
+import shlex
+import socket
 import subprocess
 import tempfile
 from datetime import datetime, timedelta
@@ -396,6 +398,18 @@ async def get_application_unit_ids_ips(ops_test: OpsTest, app: str = APP_NAME) -
     return result
 
 
+async def get_application_unit_ids_hostnames(
+    ops_test: OpsTest, app: str = APP_NAME
+) -> Dict[int, str]:
+    """List the units of an application by id and corresponding host name."""
+    result = {}
+    for unit in ops_test.model.applications[app].units:
+        unit_id = int(unit.name.split("/")[1])
+        result[unit_id] = await get_unit_hostname(ops_test, unit_id, app)
+
+    return result
+
+
 def get_application_unit_ids(ops_test: OpsTest, app: str = APP_NAME) -> List[int]:
     """List the unit IDs of an application.
 
@@ -736,3 +750,118 @@ def get_application_unit_names(ops_test: OpsTest, app: str = APP_NAME) -> List[s
         f"{unit.name.replace('/', '-')}.{app_short_id}"
         for unit in ops_test.model.applications[app].units
     ]
+
+
+@retry(
+    wait=wait_fixed(wait=15) + wait_random(0, 5),
+    stop=stop_after_attempt(25),
+)
+async def cluster_voting_config_exclusions(
+    ops_test: OpsTest, unit_ip: str
+) -> List[Dict[str, str]]:
+    """Fetch the cluster allocation of shards."""
+    result = await http_request(
+        ops_test,
+        "GET",
+        f"https://{unit_ip}:9200/_cluster/state/metadata/voting_config_exclusions",
+    )
+    return (
+        result.get("metadata", {})
+        .get("cluster_coordination", {})
+        .get("voting_config_exclusions", {})
+    )
+
+
+async def execute_update_status_manually(ops_test: OpsTest, app: str):
+    """Execute the update-status hook manually."""
+    leader_id = await get_leader_unit_id(ops_test, app)
+
+    cmd = '"export JUJU_DISPATCH_PATH=hooks/update-status; ./dispatch"'
+    exec_cmd = f"juju exec -u opensearch/{leader_id} -m {ops_test.model.name} -- {cmd}"
+    try:
+        # The "normal" subprocess.run with "export ...; ..." cmd was failing
+        # Noticed that, for this case, canonical/jhack uses shlex instead to split.
+        # Adding it fixed the issue.
+        subprocess.run(shlex.split(exec_cmd))
+    except Exception as e:
+        logger.error(
+            f"Failed to apply state: process exited with {e.returncode}; "
+            f"stdout = {e.stdout}; "
+            f"stderr = {e.stderr}.",
+        )
+
+
+@retry(wait=wait_fixed(wait=30), stop=stop_after_attempt(15))
+async def set_watermark(
+    ops_test: OpsTest,
+    app: str,
+) -> None:
+    """Set watermark on the application."""
+    unit_ip = await get_leader_unit_ip(ops_test, app=app)
+    await http_request(
+        ops_test,
+        "PUT",
+        f"https://{unit_ip}:9200/_cluster/settings",
+        {
+            "persistent": {
+                "cluster.routing.allocation.disk.threshold_enabled": "false",
+            }
+        },
+        app=app,
+    )
+
+
+def is_reachable(host: str, port: int) -> bool:
+    """Attempting a socket connection to a host/port."""
+    s = socket.socket()
+    s.settimeout(5)
+    try:
+        s.connect((host, port))
+        return True
+    except Exception as e:
+        logger.debug(f"Connection to {host}:{port} fails with: {e}")
+        return False
+    finally:
+        s.close()
+
+
+async def is_up(ops_test: OpsTest, unit_ip: str, retries: int = 25) -> bool:
+    """Return if node up."""
+    try:
+        for attempt in Retrying(stop=stop_after_attempt(retries), wait=wait_fixed(wait=15)):
+            with attempt:
+                await http_request(ops_test, "GET", f"https://{unit_ip}:9200/")
+                return True
+    except RetryError:
+        return False
+
+
+async def get_reachable_unit_ips(ops_test: OpsTest, app: str = APP_NAME) -> List[str]:
+    """Helper function to retrieve the IP addresses of all online units."""
+    result = []
+    for ip in await get_application_unit_ips(ops_test, app):
+        if not is_reachable(ip, 9200):
+            continue
+
+        if await is_up(ops_test, ip, retries=1):
+            result.append(ip)
+
+    return result
+
+
+def juju_version_major() -> int:
+    """Fetch the juju version."""
+    version = subprocess.run(["juju", "--version"], check=True, stdout=subprocess.PIPE).stdout
+    return int(version.strip().decode("utf-8").split(".")[0])
+
+
+async def get_controller_hostname(ops_test: OpsTest) -> str:
+    """Return controller machine hostname."""
+    _, raw_controller, _ = await ops_test.juju("show-controller")
+
+    controller = yaml.safe_load(raw_controller.strip())
+
+    return [
+        machine.get("instance-id")
+        for machine in controller[ops_test.controller_name]["controller-machines"].values()
+    ][0]

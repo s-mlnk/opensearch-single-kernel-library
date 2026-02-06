@@ -22,6 +22,11 @@ class ConnectionInformation:
 
 logger = logging.getLogger(__name__)
 
+OPENSEARCH_SERVICE_PATH = "/etc/systemd/system/snap.opensearch.daemon.service"
+ORIGINAL_RESTART_DELAY = 20
+SECOND_APP_NAME = "second-opensearch"
+RESTART_DELAY = 360
+
 
 @pytest.fixture(scope="function")
 async def c_writes(ops_test: OpsTest):
