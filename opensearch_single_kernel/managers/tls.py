@@ -187,6 +187,8 @@ class TlsManager(BaseManager):
         tls_file: bool = True,
     ) -> bytes:
         """Create CSR and save certificate key and password in secrets."""
+        key = None
+        password = None
         if secrets:
             key = secrets.get("key") if secrets.get("key") else None
             password = secrets.get("key-password", None)
