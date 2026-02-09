@@ -1,6 +1,6 @@
-summary: test_roles_managements.py
+summary: test_roles_management.py
 environment:
-  TEST_MODULE: ha/test_roles_managements.py
+  TEST_MODULE: ha/test_roles_management.py
 systems:
   - self-hosted-linux-amd64-noble-large
 execute: |
