@@ -1292,21 +1292,6 @@ files = [
 ]
 
 [[package]]
-name = "jproperties"
-version = "2.1.2"
-description = "Java Property file parser and writer for Python"
-optional = false
-python-versions = ">=2.7"
-groups = ["main"]
-files = [
-    {file = "jproperties-2.1.2-py2.py3-none-any.whl", hash = "sha256:4108e868353a9f4a12bb86a92df5462d0e18d00119169533972ce473029be79a"},
-    {file = "jproperties-2.1.2.tar.gz", hash = "sha256:036fcd52c10a8a1c21e6fa2a1c292c93892e759b76490acc4809213a36ddc329"},
-]
-
-[package.dependencies]
-six = ">=1.13,<2.0"
-
-[[package]]
 name = "jsonschema"
 version = "4.25.1"
 description = "An implementation of JSON Schema validation for Python"
@@ -3174,4 +3159,4 @@ type = ["pytest-mypy"]
 [metadata]
 lock-version = "2.1"
 python-versions = "^3.10"
-content-hash = "d9782f1cc8ce16c4d25f90dc9057ee84bfcd6323b7c2e743e0b2fd975f837c5f"
+content-hash = "d4920a852c1bb3c2164293da57e5ae8670e73a7d5ff4692d2d6c06d0e61edcf1"

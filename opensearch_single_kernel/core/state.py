@@ -508,26 +508,24 @@ class ClusterState(Object):
     @property
     def ca_rotation_complete_in_cluster(self) -> bool:
         """Check whether the CA rotation completed in all units."""
-        rotation_happening = False
+        rotation_in_progress = False
         rotation_complete = True
 
         # check peer units and current unit
-        if any([server.tls_ca_renewing for server in self.servers]):
-            rotation_happening = True
-        if not all([server.tls_ca_renewed for server in self.servers]):
-            rotation_complete = False
+        rotation_in_progress = any([server.tls_ca_renewing for server in self.servers])
+        rotation_complete = all([server.tls_ca_renewed for server in self.servers])
 
         # TODO: Support peer cluster and peer cluster orchestrator
         logger.debug(
             "CA rotation happening in cluster: %s | \
                 rotation complete in cluster: %s | return value: %s \
                 ",
-            rotation_happening,
+            rotation_in_progress,
             rotation_complete,
-            not rotation_happening or rotation_complete,
+            not rotation_in_progress or rotation_complete,
         )
         # if no unit is renewing the CA, or all of them renewed it, the rotation is complete
-        return not rotation_happening or rotation_complete
+        return not rotation_in_progress or rotation_complete
 
     def ca_and_certs_rotation_complete_in_cluster(self) -> bool:
         """Check whether the CA rotation completed in all units."""

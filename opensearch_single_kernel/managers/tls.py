@@ -183,16 +183,22 @@ class TlsManager(BaseManager):
         self,
         scope: Scope,
         cert_type: CertType,
-        key: str | None = None,
-        password: str | None = None,
+        secrets: dict[str, str] | None = None,
         tls_file: bool = True,
     ) -> bytes:
         """Create CSR and save certificate key and password in secrets."""
+        if secrets:
+            key = secrets.get("key") if secrets.get("key") else None
+            password = secrets.get("key-password", None)
+
         if key is None:
             key = generate_private_key()
         else:
             if tls_file:
                 key = parse_tls_file(key)
+
+        if type(key) is str:
+            key = key.encode("utf-8")
 
         if password is not None:
             password = password.encode("utf-8")
@@ -480,15 +486,34 @@ class TlsManager(BaseManager):
 
         return True
 
-    def add_ca_to_request_bundle(self, ca_cert: str) -> None:
-        """Add the CA cert to the request bundle for the requests module."""
+    def update_request_ca_bundle(self, ca_chain: str | None = None) -> None:
+        """Create a new chain.pem file for requests module"""
+        logger.debug("Updating requests TLS CA bundle")
+        if ca_chain is None:
+            admin_secret = self.state.secrets.get_object(
+                Scope.APP, CertType.APP_ADMIN.val, peek=True
+            )
+            ca_chain = admin_secret.get("chain")
+
+        # we store the pem format to make it easier for the python requests lib
+        chain_path = self.workload.paths.certs / "chain.pem"
+        parent_dir_path = chain_path.parent
+        if parent_dir_path:
+            parent_dir_path.mkdir(parents=True, exist_ok=True)
+
+        # if the chain.pem already contains the current CA chain, we can skip rewriting it
+        bundle_content = self.workload.read_text(chain_path) if chain_path.exists() else ""
+        if ca_chain not in bundle_content:
+            self.workload.write_text(f"{bundle_content}\n{ca_chain}", chain_path)
+
+    def _remove_ca_from_request_bundle(self, ca_cert: str) -> None:
+        """Remove the CA cert from the request bundle for the requests module."""
         bundle_path = self.workload.paths.certs / "chain.pem"
         if not bundle_path.exists():
             return
 
         bundle_content = self.workload.read_text(bundle_path)
-        if ca_cert not in bundle_content:
-            self.workload.write_text(f"{bundle_content}\n{ca_cert}", bundle_path)
+        self.workload.write_text(bundle_content.replace(ca_cert, ""), bundle_path)
 
     def store_new_tls_resources(self, cert_type: CertType, secrets: dict[str, Any]):
         """Add key and cert to keystore."""
@@ -553,18 +578,6 @@ class TlsManager(BaseManager):
                 logger.error("Error storing the TLS certificates for %s: %s", name, e)
         logger.info("TLS certificate for %s stored.", name)
 
-    def update_request_ca_bundle(self) -> None:
-        """Create a new chain.pem file for requests module"""
-        logger.debug("Updating requests TLS CA bundle")
-        admin_secret = self.state.secrets.get_object(Scope.APP, CertType.APP_ADMIN.val, peek=True)
-
-        # we store the pem format to make it easier for the python requests lib
-        chain_path = self.workload.paths.certs / "chain.pem"
-        parent_dir_path = chain_path.parent
-        if parent_dir_path:
-            parent_dir_path.mkdir(parents=True, exist_ok=True)
-        self.workload.write_text(admin_secret["chain"], chain_path)
-
     def store_admin_tls_secrets_if_applies(self) -> None:
         """Store admin TLS resources if available and mark unit as configured if correct."""
         # In the case of the first units before TLS is initialized,
@@ -596,7 +609,6 @@ class TlsManager(BaseManager):
         with self.workload.temp_file(
             mode="w+t", data=cert, dir=self.workload.root / "/tmp"
         ) as tmp_ca_file:
-
             try:
                 return self.workload.run_cmd(f"openssl x509 -in {tmp_ca_file} -noout -issuer").out
             except OpenSearchCmdError as e:
@@ -745,15 +757,6 @@ class TlsManager(BaseManager):
 
         logger.info("Removed %s from truststore.", alias)
 
-    def _remove_ca_from_request_bundle(self, ca_cert: str) -> None:
-        """Remove the CA cert from the request bundle for the requests module."""
-        bundle_path = self.workload.paths.certs / "chain.pem"
-        if not bundle_path.exists():
-            return
-
-        bundle_content = self.workload.read_text(bundle_path)
-        self.workload.write_text(bundle_content.replace(ca_cert, ""), bundle_path)
-
     def store_new_ca(self, secrets: dict[str, Any], create_store_pwd: bool) -> bool:
         """Add new CA cert to trust store."""
         if create_store_pwd:
@@ -776,6 +779,6 @@ class TlsManager(BaseManager):
         ):
             return False
 
-        self.add_ca_to_request_bundle(secrets.get("chain"))
+        self.update_request_ca_bundle(secrets.get("chain"))
 
         return True

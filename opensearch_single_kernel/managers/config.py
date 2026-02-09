@@ -123,11 +123,11 @@ class ConfigManager(BaseManager):
             True,
         )
 
-    def cleanup_initial_cluster_managers(self):
+    def cleanup_initial_cluster_managers(self) -> None:
         """Update the opensearch.yaml by deleting initiali_cluster_manager_nodes."""
         self.yaml_setter.delete(self.CONFIG_YML, "cluster.initial_cluster_manager_nodes")
 
-    def set_client_auth(self):
+    def set_client_auth(self) -> None:
         """Configure TLS and basic http for clients."""
         # The security plugin will accept TLS client certs if certs but doesn't require them
         # TODO this may be set to REQUIRED if we want to ensure certs provided by the client app
@@ -228,7 +228,7 @@ class ConfigManager(BaseManager):
             return False
         return True
 
-    def add_seed_hosts(self, cm_ips: list[str]):
+    def add_seed_hosts(self, cm_ips: list[str]) -> None:
         """Add CM nodes ips / host names to the seed host list of this unit."""
         cm_ips_set = set(cm_ips)
 
@@ -237,7 +237,7 @@ class ConfigManager(BaseManager):
             lines = "\n".join([entry for entry in cm_ips_set if entry.strip()])
             self.workload.write_text(f"{lines}\n", self.workload.paths.seed_hosts)
 
-    def set_admin_tls_conf(self, secrets: dict[str, Any]):
+    def set_admin_tls_conf(self, secrets: dict[str, Any]) -> None:
         """Configures the admin certificate."""
         self.yaml_setter.put(
             self.CONFIG_YML,
@@ -245,7 +245,9 @@ class ConfigManager(BaseManager):
             normalized_tls_subject(secrets["subject"]),
         )
 
-    def set_node_tls_conf(self, cert_type: CertType, truststore_pwd: str, keystore_pwd: str):
+    def set_node_tls_conf(
+        self, cert_type: CertType, truststore_pwd: str, keystore_pwd: str
+    ) -> None:
         """Configures TLS for nodes."""
         target_conf_layer = "http" if cert_type == CertType.UNIT_HTTP else "transport"
 
@@ -304,7 +306,7 @@ class ConfigManager(BaseManager):
             return True
         return False
 
-    def set_jvm_heap_size(self, heap_size_in_kb: int):
+    def set_jvm_heap_size(self, heap_size_in_kb: int) -> None:
         """Apply the performance profile's jvm heap size to the opensearch config."""
         self.yaml_setter.replace(
             self.JVM_OPTIONS,

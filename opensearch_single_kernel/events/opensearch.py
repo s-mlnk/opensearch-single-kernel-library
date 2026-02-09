@@ -43,6 +43,7 @@ from opensearch_single_kernel.common.constants import (
 )
 from opensearch_single_kernel.common.exceptions import (
     OpenSearchCmdError,
+    OpenSearchFileOperationError,
     OpenSearchHAError,
     OpenSearchHttpError,
     OpenSearchInstallError,
@@ -377,12 +378,11 @@ class OpenSearchEventsHandler(Object):
             logger.debug("update_status: Detected CA rotation complete in cluster")
             self.charm.tls_manager.finalize_ca_certs_rotation()
         # If relation not broken - leave
-        if self.charm.state.tls_relation is not None:
+        if self.charm.state.tls_relation:
             return
 
         # handle when/if certificates are expired
-        certs = self.charm.tls_manager.check_certs_expiration()
-        if certs:
+        if certs := self.charm.tls_manager.check_certs_expiration():
             missing = [cert.val for cert in certs.keys()]
             self.charm.status.set(
                 CharmStatuses.TLS_CERTS_EXPIRATION_ERROR,
@@ -390,7 +390,7 @@ class OpenSearchEventsHandler(Object):
             )
 
             # stop opensearch in case the Node-transport certificate expires.
-            if certs.get(CertType.UNIT_TRANSPORT) is not None:
+            if certs.get(CertType.UNIT_TRANSPORT):
                 try:
                     self.stop_opensearch()
                 except OpenSearchStopError:
@@ -592,7 +592,12 @@ class OpenSearchEventsHandler(Object):
                 self.charm.users_manager.save_user_locally(user)
 
         # Configure Client Authentication
-        self.charm.config_manager.set_client_auth()
+        try:
+            self.charm.config_manager.set_client_auth()
+        except OpenSearchFileOperationError as e:
+            logger.debug(f"Error while setting client auth: {e}")
+            event.defer()
+            return
 
         deployment_desc = self.charm.state.application.deployment_desc
         # only start the main orchestrator if a data node is available
@@ -725,7 +730,7 @@ class OpenSearchEventsHandler(Object):
 
             # Set the configuration of the node
             self._set_node_conf(nodes)
-        except OpenSearchHttpError as e:
+        except (OpenSearchHttpError, OpenSearchFileOperationError) as e:
             logger.debug(f"error getting the nodes: {e}")
             self.charm.lock_manager.release()
             event.defer()
@@ -745,6 +750,7 @@ class OpenSearchEventsHandler(Object):
             OpenSearchStartError,
             OpenSearchUserMgmtError,
             OpenSearchCmdError,
+            OpenSearchFileOperationError,
         ) as e:
             logger.debug("error of type: %s", type(e).__name__)
             self.charm.lock_manager.release()
@@ -824,7 +830,7 @@ class OpenSearchEventsHandler(Object):
         # TODO: Handle event.after_upgrade
         # TODO: Handle refresh relation data of peer cluster
 
-        self.configure_tls_after_start()
+        self.post_start_ca_rotation()
 
     def _on_restart_opensearch(self, event: RestartOpenSearch) -> None:
         """Event handler for restart opensearch event."""
@@ -865,6 +871,7 @@ class OpenSearchEventsHandler(Object):
     def stop_opensearch(self, *, restart: bool = False) -> None:
         """Stop OpenSearch service."""
         self.charm.status.set(CharmStatuses.SERVICE_IS_STOPPING)
+
         if self.charm.cluster_manager.opensearch_client.is_node_up():
             try:
                 nodes = self.charm.cluster_manager.get_nodes(True)
@@ -885,6 +892,7 @@ class OpenSearchEventsHandler(Object):
 
         # block until all primary shards are moved away from the unit that is stopping
         self.charm.health_manager.wait_for_shards_relocation()
+
         # Stop the workload
         self.charm.cluster_manager.stop_workload()
         self.charm.status.set(CharmStatuses.SERVICE_STOPPED)
@@ -1128,8 +1136,8 @@ class OpenSearchEventsHandler(Object):
         if on_current_unit:
             self.charm.on[PEER_RELATION].relation_changed.emit(self.charm.state.peer_relation)
 
-    def configure_tls_after_start(self):
-        """Configure TLS state and certificates after OpenSearch is started."""
+    def post_start_ca_rotation(self) -> None:
+        """Configure TLS CA rotation after OpenSearch is started."""
         # update the peer relation data for TLS CA rotation routine
         self.charm.state.reset_ca_rotation_state()
         if self.charm.state.is_tls_full_configured_in_cluster:
@@ -1178,14 +1186,11 @@ class OpenSearchEventsHandler(Object):
         # the "certificate available" callback with old certificates
         for cert_type in [CertType.UNIT_HTTP, CertType.UNIT_TRANSPORT]:
             secrets = self.charm.state.secrets.get_object(Scope.UNIT, cert_type.val, peek=True)
-            key = secrets["key"].encode("utf-8")
-            key_password = secrets.get("key-password", None)
             old_csr = secrets["csr"].encode("utf-8")
             csr = self.charm.tls_manager.create_certificate_signing_request(
                 scope=Scope.UNIT,
                 cert_type=cert_type,
-                key=key,
-                password=key_password,
+                secrets=secrets,
                 tls_file=False,
             )
 
@@ -1202,13 +1207,10 @@ class OpenSearchEventsHandler(Object):
             self.charm.state.secrets.get_object(Scope.APP, CertType.APP_ADMIN.val, peek=True) or {}
         )
 
-        key = admin_secrets["key"].encode("utf-8")
-        key_password = admin_secrets.get("key-password", None)
         csr = self.charm.tls_manager.create_certificate_signing_request(
             scope=Scope.APP,
             cert_type=CertType.APP_ADMIN,
-            key=key,
-            password=key_password,
+            secrets=admin_secrets,
             tls_file=False,
         )
 

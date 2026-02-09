@@ -11,7 +11,6 @@ from ops import EventSource
 
 from opensearch_single_kernel.common.constants import Substrates
 from opensearch_single_kernel.core.state import ClusterState
-from opensearch_single_kernel.events.actions import ActionsEventsHandler
 from opensearch_single_kernel.events.custom_events import (
     RestartOpenSearch,
     StartOpenSearch,
@@ -58,7 +57,6 @@ class OpenSearchBaseCharm(ops.CharmBase, ABC):
         # Event Handlers
         self.opensearch_events = OpenSearchEventsHandler(self)
         self.tls_events = TLSEventsHandler(self)
-        self.actions_events = ActionsEventsHandler(self)
 
     @property
     @abstractmethod
