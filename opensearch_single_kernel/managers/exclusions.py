@@ -206,7 +206,7 @@ class NodesExclusionsManager(BaseManager):
             to_add = exclusions or {node.name}
             result = self.opensearch_client.add_voting_exclusions(
                 exclusions=to_add,
-                alt_hosts=self._charm.alt_hosts,
+                alt_hosts=self.alt_hosts,
             )
             if scope == Scope.APP:
                 self.state.application.delete_voting_exclusions = to_add.union(

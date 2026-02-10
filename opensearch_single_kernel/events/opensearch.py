@@ -283,33 +283,33 @@ class OpenSearchEventsHandler(Object):
             # TODO:
 
             # we attempt to flush the translog to disk
-            self.charm.cluster_manager.flush_translog_to_disk()
+        self.charm.cluster_manager.flush_translog_to_disk()
 
-            try:
-                self.stop_opensearch()
+        try:
+            self.stop_opensearch()
+            if self.charm.cluster_manager.alt_hosts:
+                # There is enough peers available for us to try removing the unit
+                current_node = self.charm.config_manager.current_node
+                scope = Scope.APP if self.charm.unit.is_leader() else Scope.UNIT
+                self.charm.exclusions_manager.delete_current(current_node, scope)
+            # safeguards in case planned_units > 0
+            if self.charm.app.planned_units() > 0:
+                # check cluster status
                 if self.charm.cluster_manager.alt_hosts:
-                    # There is enough peers available for us to try removing the unit
-                    current_node = self.charm.config_manager.current_node
-                    scope = Scope.APP if self.charm.unit.is_leader() else Scope.UNIT
-                    self.charm.exclusions_manager.delete_current(current_node, scope)
-                # safeguards in case planned_units > 0
-                if self.charm.app.planned_units() > 0:
-                    # check cluster status
-                    if self.charm.cluster_manager.alt_hosts:
-                        health_color = self.charm.status.apply_health(
-                            wait_for_green_first=True, use_localhost=False, unit=False
-                        )
-                        if health_color == HealthColors.RED:
-                            raise OpenSearchHAError(CharmStatuses.CLUSTER_HEALTH_RED.value.message)
-                    else:
-                        raise OpenSearchHAError(CharmStatuses.CLUSTER_HEALTH_UNKNOWN.value.message)
-            finally:
-                if self.charm.app.planned_units() > 1 and (
-                    self.charm.cluster_manager.opensearch_client.is_node_up()
-                    or self.charm.cluster_manager.alt_hosts
-                ):
-                    # release lock
-                    self.charm.lock_manager.release()
+                    health_color = self.charm.status.apply_health(
+                        wait_for_green_first=True, use_localhost=False, unit=False
+                    )
+                    if health_color == HealthColors.RED:
+                        raise OpenSearchHAError(CharmStatuses.CLUSTER_HEALTH_RED.value.message)
+                else:
+                    raise OpenSearchHAError(CharmStatuses.CLUSTER_HEALTH_UNKNOWN.value.message)
+        finally:
+            if self.charm.app.planned_units() > 1 and (
+                self.charm.cluster_manager.opensearch_client.is_node_up()
+                or self.charm.cluster_manager.alt_hosts
+            ):
+                # release lock
+                self.charm.lock_manager.release()
 
     def _on_update_status(self, event: UpdateStatusEvent):  # noqa: C901
         """On update status event.
