@@ -10,7 +10,11 @@ from pytest_operator.plugin import OpsTest
 
 from tests.integration.conftest import APP_NAME
 from tests.integration.ha.continuous_writes import ContinuousWrites, ReplicationMode
-from tests.integration.helpers import app_name
+from tests.integration.helpers import (
+    app_name,
+    get_application_unit_ids,
+    update_restart_delay,
+)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -26,6 +30,15 @@ OPENSEARCH_SERVICE_PATH = "/etc/systemd/system/snap.opensearch.daemon.service"
 ORIGINAL_RESTART_DELAY = 20
 SECOND_APP_NAME = "second-opensearch"
 RESTART_DELAY = 360
+
+
+@pytest.fixture(scope="function")
+async def reset_restart_delay(ops_test: OpsTest):
+    """Resets service file delay on all units."""
+    yield
+    app = (await app_name(ops_test)) or APP_NAME
+    for unit_id in get_application_unit_ids(ops_test, app):
+        await update_restart_delay(ops_test, app, unit_id, ORIGINAL_RESTART_DELAY)
 
 
 @pytest.fixture(scope="function")

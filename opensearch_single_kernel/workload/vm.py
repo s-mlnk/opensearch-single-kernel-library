@@ -314,7 +314,7 @@ class VMWorkload(BaseWorkload):
                 cmd=command, out=output.stdout, err=output.stderr, returncode=output.returncode
             )
         except (TimeoutError, subprocess.TimeoutExpired):
-            raise OpenSearchCmdError
+            raise OpenSearchCmdError(cmd=command)
 
     @override
     def stop(self) -> None:

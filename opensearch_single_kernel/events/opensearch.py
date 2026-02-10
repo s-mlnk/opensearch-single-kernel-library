@@ -177,7 +177,7 @@ class OpenSearchEventsHandler(Object):
             if self.charm.config_manager.reconfigure_unit():
                 self.charm.status.set(CharmStatuses.WAITING_TO_START)
                 logger.debug("Restarting opensearch due to reconfiguring node roles")
-                self.charm._restart_opensearch_event.emit()
+                self.charm.restart_opensearch_event.emit()
 
         # check requirements
         if self.charm.state.application.deployment_desc:
