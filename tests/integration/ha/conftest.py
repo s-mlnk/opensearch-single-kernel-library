@@ -10,10 +10,10 @@ from pytest_operator.plugin import OpsTest
 
 from tests.integration.conftest import APP_NAME
 from tests.integration.ha.continuous_writes import ContinuousWrites, ReplicationMode
+from tests.integration.ha.helpers import update_restart_delay
 from tests.integration.helpers import (
     app_name,
     get_application_unit_ids,
-    update_restart_delay,
 )
 
 
